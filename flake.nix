@@ -69,6 +69,61 @@
           pkgs.zsh-autosuggestions
           pkgs.zsh-completions
         ];
+      homebrew ={
+        enable = true;
+        brews = [
+        "danielfoehrkn/switch/switch"
+        "gromgit/fuse/sshfs-mac"
+        "jenv"
+        "mas"
+        "nvm"
+        "virt-manager"
+        "virtctl"
+        ];
+        casks = [
+        "1password"
+        "1password-cli"
+        "arq"
+        "brave-browser"
+        "cyberduck"
+        "docker"
+        "dotnet-sdk"
+        "freemind"
+        "gitify"
+        "gitup"
+        "godot"
+        "google-chrome"
+        "graalvm-ce-java17"
+        "gstreamer-runtime"
+        "insync"
+        "iterm2"
+        "jetbrains-toolbox"
+        "kdiff3"
+        "keybase"
+        "macfuse"
+        "meld"
+        "microsoft-teams"
+        "mist"
+        "multipass"
+        "neardrop"
+        "ngrok"
+        "pop"
+        "postman"
+        "rectangle"
+        "secure-pipes"
+        "slack"
+        "sourcetree"
+        "stats"
+        "unity"
+        "unity-hub"
+        "visual-studio-code"
+        "vlc"
+        "vnc-viewer"
+        "wine-devel"
+        "wine@devel"
+        "zoom"
+        ];
+      };
 
       # Necessary for using flakes on this system.
       nix.settings.experimental-features = "nix-command flakes";
@@ -78,6 +133,8 @@
 
       # Set Git commit hash for darwin-version.
       system.configurationRevision = self.rev or self.dirtyRev or null;
+
+      security.pam.services.sudo_local.touchIdAuth = true;
 
       # Used for backwards compatibility, please read the changelog before changing.
       # $ darwin-rebuild changelog
