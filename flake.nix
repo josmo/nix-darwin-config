@@ -1,0 +1,97 @@
+{
+  description = "Joachims nix-darwin system flake";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nix-darwin.url = "github:nix-darwin/nix-darwin/master";
+    nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  outputs = inputs@{ self, nix-darwin, nixpkgs }:
+  let
+    configuration = { pkgs, ... }: {
+      # List packages installed in system profile. To search by name, run:
+      # $ nix-env -qaP | grep wget
+      nix.enable = false;
+      environment.systemPackages =
+        [
+          pkgs.act
+          pkgs.age
+          pkgs.autoconf
+          pkgs.automake
+          pkgs.awscli
+          pkgs.aws-sam-cli
+          pkgs.aws-sso-cli
+          pkgs.azure-cli
+          pkgs.clamav
+          pkgs.checkov
+          pkgs.cmake
+          pkgs.eksctl
+          pkgs.fzf
+          pkgs.gawk
+          pkgs.git-filter-repo
+          pkgs.git-lfs
+          pkgs.git-sizer
+          pkgs.gnupg
+          pkgs.gnutar
+          pkgs.go
+          pkgs.gradle
+          pkgs.gron
+          pkgs.hcledit
+          pkgs.helm-docs
+          pkgs.jq
+          pkgs.kind
+          pkgs.krew
+          pkgs.kubebuilder
+          pkgs.kubernetes-helm
+          pkgs.kustomize
+          pkgs.kustomize-sops
+          pkgs.mkdocs
+          pkgs.neovim
+          pkgs.nmap
+          pkgs.openconnect
+          pkgs.oras
+          pkgs.pre-commit
+          pkgs.protobuf
+          pkgs.pulumi
+          pkgs.qemu
+          pkgs.renovate
+          pkgs.sops
+          pkgs.telepresence2
+          pkgs.tenv
+          pkgs.terraform-docs
+          pkgs.tmux
+          pkgs.vim
+          pkgs.vpn-slice
+          pkgs.wget
+          pkgs.yarn
+          pkgs.yq
+          pkgs.zsh-autosuggestions
+          pkgs.zsh-completions
+        ];
+
+      # Necessary for using flakes on this system.
+      nix.settings.experimental-features = "nix-command flakes";
+
+      # Enable alternative shell support in nix-darwin.
+      # programs.fish.enable = true;
+
+      # Set Git commit hash for darwin-version.
+      system.configurationRevision = self.rev or self.dirtyRev or null;
+
+      # Used for backwards compatibility, please read the changelog before changing.
+      # $ darwin-rebuild changelog
+      system.stateVersion = 6;
+
+      # The platform the configuration will be used on.
+      nixpkgs.hostPlatform = "aarch64-darwin";
+    };
+  in
+  {
+    # Build darwin flake using:
+    # $ darwin-rebuild build --flake .#simple
+    darwinConfigurations."joachim-mb-pro" = nix-darwin.lib.darwinSystem {
+      modules = [ configuration ];
+    };
+  };
+}
