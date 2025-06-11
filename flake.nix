@@ -60,6 +60,7 @@
           pkgs.telepresence2
           pkgs.tenv
           pkgs.terraform-docs
+          pkgs.tflint
           pkgs.tmux
           pkgs.vim
           pkgs.vpn-slice
@@ -109,6 +110,7 @@
         "kdiff3"
         "keybase"
         "macfuse"
+        "mattermost"
         "meld"
         "microsoft-teams"
         "mist"
