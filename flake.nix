@@ -78,7 +78,7 @@
                    autoUpdate = true; # Fetch the newest stable branch of Homebrew's git repo
                    upgrade = true; # Upgrade outdated casks, formulae, and App Store apps
                   # 'zap': uninstalls all formulae(and related files) not listed in the generated Brewfile
-#                   cleanup = "zap";
+                   cleanup = "zap";
         };
         brews = [
         "danielfoehrkn/switch/switch"
@@ -103,7 +103,6 @@
         "gitup"
         "godot"
         "google-chrome"
-        "graalvm-ce-java17"
         "gstreamer-runtime"
         "insync"
         "iterm2"
@@ -113,10 +112,8 @@
         "macfuse"
         "mattermost"
         "meld"
-        "microsoft-teams"
         "mist"
         "multipass"
-        "neardrop"
         "ngrok"
         "pop"
         "postman"
@@ -131,8 +128,6 @@
         "visual-studio-code"
         "vlc"
         "vnc-viewer"
-        "wine-devel"
-        "wine@devel"
         "zoom"
         ];
       };
