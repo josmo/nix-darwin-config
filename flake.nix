@@ -26,7 +26,6 @@
           pkgs.azure-cli
           pkgs.brotli
           pkgs.clamav
-          pkgs.checkov
           pkgs.cmake
           pkgs.eksctl
           pkgs.fzf
