@@ -69,6 +69,7 @@
           pkgs.wget
           pkgs.yarn
           pkgs.yq
+	  pkgs.zed-editor
           pkgs.zsh-autosuggestions
           pkgs.zsh-completions
         ];
@@ -117,7 +118,7 @@
         "mist"
         "multipass"
         "ngrok"
-        "pop"
+        "pop-app"
         "postman"
         "rectangle"
         "secure-pipes"
