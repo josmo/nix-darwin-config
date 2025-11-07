@@ -21,7 +21,7 @@
           pkgs.autoconf
           pkgs.automake
           pkgs.awscli
-          pkgs.aws-sam-cli
+          #pkgs.aws-sam-cli
           pkgs.aws-sso-cli
           pkgs.azure-cli
           pkgs.brotli
@@ -53,6 +53,7 @@
           pkgs.nmap
           pkgs.openconnect
           pkgs.oras
+	  pkgs.pnpm
           pkgs.pre-commit
           pkgs.protobuf
           pkgs.pulumi
