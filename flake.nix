@@ -24,6 +24,7 @@
           #pkgs.aws-sam-cli
           pkgs.aws-sso-cli
           pkgs.azure-cli
+          pkgs.google-cloud-sdk
           pkgs.brotli
           pkgs.clamav
           pkgs.cmake
