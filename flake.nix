@@ -21,10 +21,8 @@
           pkgs.autoconf
           pkgs.automake
           pkgs.awscli
-          #pkgs.aws-sam-cli
           pkgs.aws-sso-cli
           pkgs.azure-cli
-          pkgs.google-cloud-sdk
           pkgs.brotli
           pkgs.clamav
           pkgs.cmake
@@ -38,6 +36,7 @@
           pkgs.gnutar
           pkgs.go
           pkgs.golangci-lint
+          (pkgs.google-cloud-sdk.withExtraComponents [pkgs.google-cloud-sdk.components.gke-gcloud-auth-plugin])
           pkgs.gradle
           pkgs.gron
           pkgs.hcledit
@@ -54,7 +53,7 @@
           pkgs.nmap
           pkgs.openconnect
           pkgs.oras
-	  pkgs.pnpm
+	      pkgs.pnpm
           pkgs.pre-commit
           pkgs.protobuf
           pkgs.pulumi
@@ -71,11 +70,11 @@
           pkgs.wget
           pkgs.yarn
           pkgs.yq
-	  pkgs.zed-editor
+	      pkgs.zed-editor
           pkgs.zsh-autosuggestions
           pkgs.zsh-completions
         ];
-#      environment.variables.EDITOR = "nvim";
+      environment.variables.EDITOR = "nvim";
       homebrew ={
         enable = true;
         onActivation = {
