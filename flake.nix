@@ -58,7 +58,7 @@
           pkgs.protobuf
           pkgs.pulumi
           pkgs.qemu
-          pkgs.renovate
+          #pkgs.renovate
           pkgs.sops
           pkgs.telepresence2
           pkgs.tenv
