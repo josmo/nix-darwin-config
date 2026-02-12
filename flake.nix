@@ -12,6 +12,7 @@
     configuration = { pkgs, ... }: {
       # List packages installed in system profile. To search by name, run:
       # $ nix-env -qaP | grep wget
+      nixpkgs.config.allowUnfree = true;
       system.primaryUser = "jhill";
       nix.enable = false;
       environment.systemPackages =
@@ -53,7 +54,8 @@
           pkgs.nmap
           pkgs.openconnect
           pkgs.oras
-	      pkgs.pnpm
+	  pkgs.packer
+	  pkgs.pnpm
           pkgs.pre-commit
           pkgs.protobuf
           pkgs.pulumi
