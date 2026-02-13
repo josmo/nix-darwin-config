@@ -28,6 +28,7 @@
           pkgs.clamav
           pkgs.cmake
           pkgs.eksctl
+	  pkgs.fpm
           pkgs.fzf
           pkgs.gawk
           pkgs.git-filter-repo
@@ -60,6 +61,7 @@
           pkgs.protobuf
           pkgs.pulumi
           pkgs.qemu
+	  pkgs.rpm
           #pkgs.renovate
           pkgs.sops
           pkgs.telepresence2
