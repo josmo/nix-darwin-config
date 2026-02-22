@@ -63,6 +63,7 @@
           pkgs.qemu
 	  pkgs.rpm
           #pkgs.renovate
+	  pkgs.shellcheck
           pkgs.sops
           pkgs.telepresence2
           pkgs.tenv
