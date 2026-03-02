@@ -61,6 +61,7 @@
           pkgs.protobuf
           pkgs.pulumi
           pkgs.qemu
+	  pkgs.ruby_3_3
 	  pkgs.rpm
           #pkgs.renovate
 	  pkgs.shellcheck
