@@ -28,7 +28,7 @@
           pkgs.clamav
           pkgs.cmake
           pkgs.eksctl
-	  pkgs.fpm
+	      pkgs.fpm
           pkgs.fzf
           pkgs.gawk
           pkgs.git-filter-repo
@@ -55,16 +55,17 @@
           pkgs.nmap
           pkgs.openconnect
           pkgs.oras
-	  pkgs.packer
-	  pkgs.pnpm
+	      pkgs.packer
+	      pkgs.pnpm
           pkgs.pre-commit
           pkgs.protobuf
           pkgs.pulumi
           pkgs.qemu
-	  pkgs.ruby_3_3
-	  pkgs.rpm
+	      pkgs.ruby_3_3
+	      pkgs.rpm
           #pkgs.renovate
-	  pkgs.shellcheck
+	      pkgs.shellcheck
+	      pkgs.shfmt
           pkgs.sops
           pkgs.telepresence2
           pkgs.tenv
@@ -76,7 +77,7 @@
           pkgs.wget
           pkgs.yarn
           pkgs.yq
-	  #pkgs.zed-editor
+	      #pkgs.zed-editor
           pkgs.zsh-autosuggestions
           pkgs.zsh-completions
         ];
