@@ -44,6 +44,7 @@
           pkgs.hcledit
           pkgs.helm-docs
           pkgs.jq
+          pkgs.just
           pkgs.kind
           pkgs.krew
           pkgs.kubebuilder
