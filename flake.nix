@@ -82,7 +82,9 @@
           pkgs.zsh-autosuggestions
           pkgs.zsh-completions
         ];
-      environment.variables.EDITOR = "nvim";
+      environment.variables = {
+        EDITOR = "nvim";
+      };
       homebrew ={
         enable = true;
         onActivation = {
@@ -90,6 +92,9 @@
                    upgrade = true; # Upgrade outdated casks, formulae, and App Store apps
                   # 'zap': uninstalls all formulae(and related files) not listed in the generated Brewfile
                   # cleanup = "zap";
+		  extraEnv = {
+                    HOMEBREW_NO_REQUIRE_TAP_TRUST = "1";
+                  };
         };
         brews = [
         "danielfoehrkn/switch/switch"
