@@ -25,7 +25,7 @@
           pkgs.aws-sso-cli
           pkgs.azure-cli
           pkgs.brotli
-          pkgs.clamav
+ #         pkgs.clamav
           pkgs.cmake
           pkgs.eksctl
 	      pkgs.fpm
