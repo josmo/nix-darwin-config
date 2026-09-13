@@ -53,6 +53,7 @@ in
           sudo --user=${user} -- mkdir -p "${home}/$(dirname "$f")"
           sudo --user=${user} -- ln -sfn "${dotfiles}/$f" "${home}/$f"
         done
+        [ -L "${home}/.apm" ] || sudo --user=${user} -- ln -sfn "${dotfiles}/apm" "${home}/.apm"
         # Prune symlinks in ~ and ~/.config that point into the repo but are no longer tracked.
         # Scoped to links targeting the repo, so hand-made links elsewhere are never touched.
         { find "${home}" -maxdepth 1 -type l; find "${home}/.config" -maxdepth 3 -type l 2>/dev/null; } |
@@ -60,7 +61,7 @@ in
           case "$(readlink "$link")" in
             "${dotfiles}"/*)
               rel="''${link#"${home}"/}"
-              keep=0
+              keep=0; [ "$rel" = ".apm" ] && keep=1
               for f in "''${links[@]}"; do
                 [ "$f" = "$rel" ] && keep=1 && break
               done
