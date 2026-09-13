@@ -22,66 +22,11 @@ in
   nix.enable = false;
 
   # Replaces the geerlingguy.dotfiles Ansible role: symlink dotfiles from the repo into $HOME.
-  # Activation runs as root, so drop to the primary user for anything under their home.
-  system.activationScripts.postActivation.text =
-    ''
-      # Bootstrap: clone the dotfiles repo if the checkout is missing. Ignore the user's
-      # gitconfig so its https->ssh URL rewrite cannot turn this into an SSH clone.
-      if [ ! -d "${dotfiles}/.git" ]; then
-        echo "cloning ${dotfilesRepo} to ${dotfiles}" >&2
-        sudo --user=${user} -- mkdir -p "$(dirname "${dotfiles}")"
-        if sudo --user=${user} -- env GIT_CONFIG_GLOBAL=/dev/null git clone "${dotfilesRepo}" "${dotfiles}"; then
-          sudo --user=${user} -- git -C "${dotfiles}" remote set-url --push origin "${dotfilesPushUrl}"
-        else
-          echo "warning: could not clone dotfiles (offline, or repo is private); clone it by hand" >&2
-        fi
-      fi
-      if [ -d "${dotfiles}/.git" ]; then
-        echo "linking dotfiles from ${dotfiles}" >&2
-        # Link every tracked path that starts with a dot, except .gitignore, to the same
-        # path under $HOME. Tracked-only means ignored/untracked files are never linked.
-        # Files are linked individually, never whole ~/.config/<tool> dirs, so caches
-        # and tokens stay out of git. Add = git add; remove = git rm (pruned below).
-        links=()
-        while IFS= read -r f; do
-          case "$f" in
-            .gitignore) ;;
-            .*) links+=("$f") ;;
-          esac
-        done < <(sudo --user=${user} -- git -C "${dotfiles}" ls-files)
-        for f in "''${links[@]}"; do
-          sudo --user=${user} -- mkdir -p "${home}/$(dirname "$f")"
-          sudo --user=${user} -- ln -sfn "${dotfiles}/$f" "${home}/$f"
-        done
-        [ -L "${home}/.apm" ] || sudo --user=${user} -- ln -sfn "${dotfiles}/apm" "${home}/.apm"
-        # Prune symlinks in ~ and ~/.config that point into the repo but are no longer tracked.
-        # Scoped to links targeting the repo, so hand-made links elsewhere are never touched.
-        { find "${home}" -maxdepth 1 -type l; find "${home}/.config" -maxdepth 3 -type l 2>/dev/null; } |
-        while IFS= read -r link; do
-          case "$(readlink "$link")" in
-            "${dotfiles}"/*)
-              rel="''${link#"${home}"/}"
-              keep=0; [ "$rel" = ".apm" ] && keep=1
-              for f in "''${links[@]}"; do
-                [ "$f" = "$rel" ] && keep=1 && break
-              done
-              if [ "$keep" = 0 ]; then
-                echo "removing stale dotfile link $link" >&2
-                sudo --user=${user} -- rm "$link"
-              fi
-              ;;
-          esac
-        done
-        # .zshrc sources this plugin; it is not in nixpkgs, so clone it if missing.
-        fzf_tab="${home}/.oh-my-zsh/custom/plugins/fzf-tab-completion"
-        if [ ! -d "$fzf_tab" ]; then
-          sudo --user=${user} -- git clone --depth 1 https://github.com/lincheney/fzf-tab-completion.git "$fzf_tab" \
-            || echo "warning: could not clone fzf-tab-completion" >&2
-        fi
-      else
-        echo "warning: dotfiles repo not found at ${dotfiles}; skipping symlinks" >&2
-      fi
-    '';
+  # Activation runs as root, so the script is run as the primary user. See link-dotfiles.sh.
+  system.activationScripts.postActivation.text = ''
+    sudo --set-home --user=${user} -- env DOTFILES=${dotfiles} DOTFILES_REPO=${dotfilesRepo} DOTFILES_PUSH_URL=${dotfilesPushUrl} \
+      ${pkgs.bash}/bin/bash ${./link-dotfiles.sh}
+  '';
   environment.systemPackages = with pkgs; [
     act
     age
