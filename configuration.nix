@@ -1,28 +1,82 @@
 {
   config,
+  lib,
   pkgs,
   self,
   ...
 }:
+let
+  user = "jhill";
+  home = "/Users/${user}";
+  # Single source of truth for the dotfiles checkout. Exported as $DOTFILES for shells
+  # (see environment.variables) and used by the activation script below.
+  dotfiles = "${home}/Development/workspace/src/github.com/josmo/dotfiles";
+  # HTTPS for the bootstrap clone: activation runs under sudo with no ssh-agent or keys.
+  # Pushes are pointed at SSH right after cloning.
+  dotfilesRepo = "https://github.com/josmo/dotfiles.git";
+  dotfilesPushUrl = "git@github.com:josmo/dotfiles.git";
+in
 {
   nixpkgs.config.allowUnfree = true;
-  system.primaryUser = "jhill";
+  system.primaryUser = user;
   nix.enable = false;
 
   # Replaces the geerlingguy.dotfiles Ansible role: symlink dotfiles from the repo into $HOME.
   # Activation runs as root, so drop to the primary user for anything under their home.
   system.activationScripts.postActivation.text =
-    let
-      user = config.system.primaryUser;
-      home = "/Users/${user}";
-      dotfiles = "${home}/Development/workspace/src/github.com/josmo/dotfiles";
-    in
     ''
-      if [ -d "${dotfiles}" ]; then
+      # Bootstrap: clone the dotfiles repo if the checkout is missing. Ignore the user's
+      # gitconfig so its https->ssh URL rewrite cannot turn this into an SSH clone.
+      if [ ! -d "${dotfiles}/.git" ]; then
+        echo "cloning ${dotfilesRepo} to ${dotfiles}" >&2
+        sudo --user=${user} -- mkdir -p "$(dirname "${dotfiles}")"
+        if sudo --user=${user} -- env GIT_CONFIG_GLOBAL=/dev/null git clone "${dotfilesRepo}" "${dotfiles}"; then
+          sudo --user=${user} -- git -C "${dotfiles}" remote set-url --push origin "${dotfilesPushUrl}"
+        else
+          echo "warning: could not clone dotfiles (offline, or repo is private); clone it by hand" >&2
+        fi
+      fi
+      if [ -d "${dotfiles}/.git" ]; then
         echo "linking dotfiles from ${dotfiles}" >&2
-        for f in .zshrc .gitconfig .gitignore_global .tmux.conf; do
+        # Link every tracked path that starts with a dot, except .gitignore, to the same
+        # path under $HOME. Tracked-only means ignored/untracked files are never linked.
+        # Files are linked individually, never whole ~/.config/<tool> dirs, so caches
+        # and tokens stay out of git. Add = git add; remove = git rm (pruned below).
+        links=()
+        while IFS= read -r f; do
+          case "$f" in
+            .gitignore) ;;
+            .*) links+=("$f") ;;
+          esac
+        done < <(sudo --user=${user} -- git -C "${dotfiles}" ls-files)
+        for f in "''${links[@]}"; do
+          sudo --user=${user} -- mkdir -p "${home}/$(dirname "$f")"
           sudo --user=${user} -- ln -sfn "${dotfiles}/$f" "${home}/$f"
         done
+        # Prune symlinks in ~ and ~/.config that point into the repo but are no longer tracked.
+        # Scoped to links targeting the repo, so hand-made links elsewhere are never touched.
+        { find "${home}" -maxdepth 1 -type l; find "${home}/.config" -maxdepth 3 -type l 2>/dev/null; } |
+        while IFS= read -r link; do
+          case "$(readlink "$link")" in
+            "${dotfiles}"/*)
+              rel="''${link#"${home}"/}"
+              keep=0
+              for f in "''${links[@]}"; do
+                [ "$f" = "$rel" ] && keep=1 && break
+              done
+              if [ "$keep" = 0 ]; then
+                echo "removing stale dotfile link $link" >&2
+                sudo --user=${user} -- rm "$link"
+              fi
+              ;;
+          esac
+        done
+        # .zshrc sources this plugin; it is not in nixpkgs, so clone it if missing.
+        fzf_tab="${home}/.oh-my-zsh/custom/plugins/fzf-tab-completion"
+        if [ ! -d "$fzf_tab" ]; then
+          sudo --user=${user} -- git clone --depth 1 https://github.com/lincheney/fzf-tab-completion.git "$fzf_tab" \
+            || echo "warning: could not clone fzf-tab-completion" >&2
+        fi
       else
         echo "warning: dotfiles repo not found at ${dotfiles}; skipping symlinks" >&2
       fi
@@ -115,6 +169,7 @@
   ];
   environment.variables = {
     EDITOR = "nvim";
+    DOTFILES = dotfiles;
   };
   programs.direnv = {
     enable = true;
@@ -192,7 +247,6 @@
       "unity-hub"
       "visual-studio-code"
       "vlc"
-      "vnc-viewer"
       "zoom"
     ];
     masApps = {
