@@ -1,8 +1,32 @@
-{ pkgs, self, ... }:
+{
+  config,
+  pkgs,
+  self,
+  ...
+}:
 {
   nixpkgs.config.allowUnfree = true;
   system.primaryUser = "jhill";
   nix.enable = false;
+
+  # Replaces the geerlingguy.dotfiles Ansible role: symlink dotfiles from the repo into $HOME.
+  # Activation runs as root, so drop to the primary user for anything under their home.
+  system.activationScripts.postActivation.text =
+    let
+      user = config.system.primaryUser;
+      home = "/Users/${user}";
+      dotfiles = "${home}/Development/workspace/src/github.com/josmo/dotfiles";
+    in
+    ''
+      if [ -d "${dotfiles}" ]; then
+        echo "linking dotfiles from ${dotfiles}" >&2
+        for f in .zshrc .gitconfig .gitignore_global .tmux.conf; do
+          sudo --user=${user} -- ln -sfn "${dotfiles}/$f" "${home}/$f"
+        done
+      else
+        echo "warning: dotfiles repo not found at ${dotfiles}; skipping symlinks" >&2
+      fi
+    '';
   environment.systemPackages = with pkgs; [
     act
     age
@@ -106,8 +130,8 @@
     onActivation = {
       autoUpdate = true; # Fetch the newest stable branch of Homebrew's git repo
       upgrade = true; # Upgrade outdated casks, formulae, and App Store apps
-      # 'zap': uninstalls all formulae(and related files) not listed in the generated Brewfile
-      # cleanup = "zap";
+      # 'uninstall': remove formulae/casks/taps not listed in the generated Brewfile ('zap' also purges their data)
+      cleanup = "uninstall";
       extraEnv = {
         HOMEBREW_NO_REQUIRE_TAP_TRUST = "1";
       };
@@ -171,6 +195,26 @@
       "vnc-viewer"
       "zoom"
     ];
+    masApps = {
+      "Business" = 1588151344;
+      "DiverLog Lite" = 540107482;
+      "djay Pro" = 947578651;
+      "GarageBand" = 682658836;
+      "iMovie" = 408981434;
+      "Keynote" = 409183694;
+      "Kindle Classic" = 405399194;
+      "Numbers" = 409203825;
+      "Pages" = 409201541;
+      "PDFgear" = 6469021132;
+      "Pocket" = 568494494;
+      "ScreenFlow" = 1107828211;
+      "Tailscale" = 1475387142;
+      "Trello" = 1278508951;
+      "WhatsApp" = 310633997;
+      "Windows App" = 1295203466;
+      "WireGuard" = 1451685025;
+      "Xcode" = 497799835;
+    };
   };
 
   # Set Git commit hash for darwin-version.
