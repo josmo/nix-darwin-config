@@ -37,7 +37,7 @@ in
     autoconf
     automake
     aws-sso-cli
-    awscli
+    awscli2
     azure-cli
     brotli
     cmake
@@ -163,7 +163,7 @@ in
       "gitup-app"
       "godot"
       "google-chrome"
-      "gstreamer-runtime"
+#      "gstreamer-runtime"
       "insync"
       "iterm2"
       "jetbrains-toolbox"
@@ -184,7 +184,7 @@ in
       "postman"
       "realvnc-connect-viewer"
       "rectangle"
-      "secure-pipes"
+#      "secure-pipes"
       "slack"
       "sourcetree"
       "stats"
