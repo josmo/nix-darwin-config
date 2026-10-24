@@ -1,6 +1,4 @@
 {
-  config,
-  lib,
   pkgs,
   self,
   ...
@@ -15,9 +13,25 @@ let
   # Pushes are pointed at SSH right after cloning.
   dotfilesRepo = "https://github.com/josmo/dotfiles.git";
   dotfilesPushUrl = "git@github.com:josmo/dotfiles.git";
+
+  # Per-directory Lima VM for coding agents; see sandbox/sandbox.sh.
+  sandbox = pkgs.writeShellApplication {
+    name = "sandbox";
+    runtimeInputs = [
+      pkgs.lima
+      pkgs.git
+    ];
+    runtimeEnv.LIMA_TEMPLATE = ./sandbox/agent-base.yaml;
+    text = builtins.readFile ./sandbox/sandbox.sh;
+  };
 in
 {
-  nixpkgs.config.allowUnfree = true;
+  nixpkgs.config = {
+    allowUnfree = true;
+    problems.handlers = {
+      fabric.broken = "warn";
+    };
+  };
   system.primaryUser = user;
   nix.enable = false;
 
@@ -28,17 +42,21 @@ in
       ${pkgs.bash}/bin/bash ${./link-dotfiles.sh}
   '';
   environment.systemPackages = with pkgs; [
+    lima
+    sandbox
     act
     age
     age-plugin-yubikey
-    apm-cli
+    (apm-cli.overridePythonAttrs (old: {
+      dontCheckRuntimeDeps = true;
+    }))
     antigravity-cli
     argocd
     autoconf
     automake
-    aws-sso-cli
     awscli2
-    azure-cli
+#    aws-sso-cli
+#    azure-cli
     brotli
     cmake
     eksctl
@@ -81,9 +99,9 @@ in
     opencode
     opensc
     oras
-    #          packer
+    # packer
     pnpm
-    pre-commit
+    prek
     poppler-utils
     protobuf
     pulumi
@@ -94,7 +112,7 @@ in
     qemu
     renovate
     rpm
-    ruby_3_3
+    ruby
     shellcheck
     shfmt
     sops
@@ -113,19 +131,23 @@ in
     yq
     zsh-completions
   ];
+
   environment.variables = {
     EDITOR = "nvim";
     DOTFILES = dotfiles;
   };
+
   programs.direnv = {
     enable = true;
     nix-direnv.enable = true;
   };
+
   programs.zsh = {
     enable = true;
     enableAutosuggestions = true;
     enableSyntaxHighlighting = true;
   };
+
   homebrew = {
     enable = true;
     onActivation = {
@@ -133,12 +155,10 @@ in
       upgrade = true; # Upgrade outdated casks, formulae, and App Store apps
       # 'uninstall': remove formulae/casks/taps not listed in the generated Brewfile ('zap' also purges their data)
       cleanup = "uninstall";
-      extraEnv = {
-        HOMEBREW_NO_REQUIRE_TAP_TRUST = "1";
-      };
     };
     taps = [ "gromgit/fuse" ];
     brews = [
+      "aws-sso-cli"
       "awsdac"
       "cfn-lint"
       "gromgit/fuse/sshfs-mac"
@@ -151,6 +171,7 @@ in
       "1password"
       "1password-cli"
       "arq"
+      "azure-cli"
       "brave-browser"
       "bruno"
       "calibre"
@@ -163,7 +184,6 @@ in
       "gitup-app"
       "godot"
       "google-chrome"
-#      "gstreamer-runtime"
       "insync"
       "iterm2"
       "jetbrains-toolbox"
@@ -184,7 +204,6 @@ in
       "postman"
       "realvnc-connect-viewer"
       "rectangle"
-#      "secure-pipes"
       "slack"
       "sourcetree"
       "stats"
@@ -198,7 +217,6 @@ in
     masApps = {
       "Business" = 1588151344;
       "DiverLog Lite" = 540107482;
-      "djay Pro" = 947578651;
       "GarageBand" = 682658836;
       "iMovie" = 408981434;
       "Keynote" = 409183694;
