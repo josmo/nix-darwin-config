@@ -12,7 +12,8 @@
  * 2. CLEAN PHONE VIEW MIRROR (Work Primary -> Work Secondary Calendar):
  *    Optionally maintains a secondary calendar in your work account (e.g.,
  *    "Work (Phone View)") containing ONLY your real work meetings (excluding
- *    the personal "Busy" blocks). On your phone, uncheck your primary work
+ *    the personal "Busy" blocks), with location, details, video link and the
+ *    attendee list (as text) copied over. On your phone, uncheck your primary work
  *    calendar and check "Work (Phone View)" so you never see duplicate events!
  *
  * ----------------------------------------------------------------------------
@@ -121,11 +122,7 @@ const CONFIG = {
  * Main entrypoint: Orchestrates locking, Busy-Block syncing, and Phone-View mirroring.
  */
 function syncBusyBlocks() {
-  withScriptLock(() => {
-    if (CONFIG.DRY_RUN) {
-      Logger.log('=== DRY RUN MODE ENABLED (No calendar changes will be made) ===');
-    }
-
+  withScriptLock('syncBusyBlocks', () => {
     const now = new Date();
     const cleanStart = addDays(now, -CONFIG.PAST_DAYS_TO_CLEAN);
     const syncEnd = addDays(now, CONFIG.DAYS_IN_FUTURE);
@@ -161,11 +158,7 @@ function syncBusyBlocks() {
  * (-30 days to +90 days) on both the primary calendar and the Phone View calendar.
  */
 function removeAllSyncedBlocks() {
-  withScriptLock(() => {
-    if (CONFIG.DRY_RUN) {
-      Logger.log('=== DRY RUN: removeAllSyncedBlocks ===');
-    }
-
+  withScriptLock('removeAllSyncedBlocks', () => {
     const now = new Date();
     const start = addDays(now, -Math.max(CONFIG.PAST_DAYS_TO_CLEAN, 30));
     const end = addDays(now, Math.max(CONFIG.DAYS_IN_FUTURE, 90));
@@ -270,13 +263,9 @@ function isBusySourceEvent(item) {
  * using a signature-based Delta Sync.
  */
 function syncPhoneViewMirror(workEvents, cleanStart, syncEnd, budget) {
-  let phoneCalId = findPhoneViewCalendarId();
+  const phoneCalId = findPhoneViewCalendarId() || (CONFIG.DRY_RUN ? null : createPhoneViewCalendar());
   if (!phoneCalId) {
-    if (CONFIG.DRY_RUN) {
-      Logger.log(`[DRY RUN] Secondary calendar "${CONFIG.PHONE_VIEW_CALENDAR_NAME}" does not exist yet (will be auto-created when DRY_RUN is false).`);
-    } else {
-      phoneCalId = createPhoneViewCalendar();
-    }
+    Logger.log(`[DRY RUN] Secondary calendar "${CONFIG.PHONE_VIEW_CALENDAR_NAME}" does not exist yet (will be auto-created when DRY_RUN is false).`);
   }
 
   const desiredMirrors = workEvents.map(toMirrorEvent);
@@ -306,35 +295,44 @@ function mirrorKey(item) {
 }
 
 /**
- * Builds the Phone View copy of a work event, tagged with a signature of its core
- * fields so any title, time, or location change triggers a clean replacement.
+ * Builds the Phone View copy of a work event, tagged with a hash of its full content
+ * so any change (title, time, location, details, attendees) triggers a clean replacement.
  */
 function toMirrorEvent(item) {
-  const summary = item.summary || '(No title)';
-  const location = item.location || '';
-  const signature = `${item.id}_${busyKey(item)}_${summary}_${location}`;
-
-  // Preserve conference link (Google Meet / Zoom) inside description so it's clickable on phone
-  const meetUri = item.hangoutLink || item.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri;
-  let description = item.description || '';
-  if (meetUri && !description.includes(meetUri)) {
-    description = `Video Call: ${meetUri}\n\n${description}`.trim();
-  }
-
-  return {
-    summary: summary,
-    description: description,
-    location: location,
+  const mirror = {
+    summary: item.summary || '(No title)',
+    description: mirrorDescription(item),
+    location: item.location || '',
     start: item.start,
     end: item.end,
-    reminders: { useDefault: false, overrides: [] }, // Avoid double notifications on phone
-    extendedProperties: {
-      shared: {
-        [CONFIG.TAG_KEY]: CONFIG.PHONE_MIRROR_TAG_VALUE,
-        mirror_sig: signature
-      }
+    reminders: { useDefault: false, overrides: [] } // Avoid double notifications on phone
+  };
+
+  mirror.extendedProperties = {
+    shared: {
+      [CONFIG.TAG_KEY]: CONFIG.PHONE_MIRROR_TAG_VALUE,
+      mirror_sig: digest(item.id + JSON.stringify(mirror))
     }
   };
+  return mirror;
+}
+
+/**
+ * Video link + original details + attendee list. Attendees go in the text rather than
+ * the `attendees` field, which would put the copy on their calendars.
+ */
+function mirrorDescription(item) {
+  const description = item.description || '';
+  const meetUri = item.hangoutLink || item.conferenceData?.entryPoints?.find(e => e.entryPointType === 'video')?.uri;
+  const attendees = (item.attendees || [])
+    .filter(a => !a.resource) // Rooms already show up in location
+    .map(a => `• ${a.displayName ? `${a.displayName} <${a.email}>` : a.email}${a.organizer ? ' (organizer)' : ''}`);
+
+  return [
+    meetUri && !description.includes(meetUri) ? `Video Call: ${meetUri}` : '',
+    description,
+    attendees.length ? `Attendees:\n${attendees.join('\n')}` : ''
+  ].filter(Boolean).join('\n\n');
 }
 
 /**
@@ -373,13 +371,17 @@ function createPhoneViewCalendar() {
 /**
  * Acquires the script lock and runs `fn`, skipping if another run holds it.
  */
-function withScriptLock(fn) {
+function withScriptLock(label, fn) {
   ensureAdvancedCalendarEnabled();
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
     Logger.log('Another sync operation is already running. Skipping.');
     return;
+  }
+
+  if (CONFIG.DRY_RUN) {
+    Logger.log(`=== DRY RUN: ${label} (no calendar changes will be made) ===`);
   }
 
   try {
@@ -444,7 +446,8 @@ function tryWrite(budget, logLine, fn) {
 }
 
 /**
- * Lists all non-cancelled single events overlapping [start, end], following pagination.
+ * Lists all single events overlapping [start, end], following pagination.
+ * (Cancelled events are excluded by default since `showDeleted` is false.)
  */
 function listEvents(calendarId, start, end, extraOptions = {}) {
   const items = [];
@@ -459,7 +462,7 @@ function listEvents(calendarId, start, end, extraOptions = {}) {
       maxResults: 250,
       pageToken: pageToken
     }));
-    items.push(...(response.items || []).filter(item => item.status !== 'cancelled'));
+    items.push(...(response.items || []));
     pageToken = response.nextPageToken;
   } while (pageToken);
 
@@ -547,6 +550,10 @@ function addDays(date, days) {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
+}
+
+function digest(str) {
+  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, str, Utilities.Charset.UTF_8));
 }
 
 function eventDate(time) {
