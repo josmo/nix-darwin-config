@@ -1,0 +1,14 @@
+#!/bin/sh
+# Main process of every sandbox machine (runs as root): a Docker daemon for the agent,
+# and a relay that serves host Ollama, mounted as /run/ollama.sock, on localhost:11434.
+
+# Docker's and containerd's overlay layers can't nest on the rootfs overlay; keep them on
+# the machine's ext4 disk (/storage). Bind mounts don't survive a restart, so redo them here.
+for d in docker containerd; do
+  mkdir -p "/storage/$d" "/var/lib/$d"
+  mount --bind "/storage/$d" "/var/lib/$d"
+done
+rm -f /var/run/docker.pid
+dockerd >/var/log/dockerd.log 2>&1 &
+
+exec socat TCP-LISTEN:11434,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:/run/ollama.sock
