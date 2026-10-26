@@ -1,10 +1,8 @@
 # Coding-agent sandboxes: one smolvm microVM per repo and agent. Usage: `sandbox --help`.
 { config, pkgs, ... }:
 let
-  home = "/Users/${config.system.primaryUser}";
   # Host Ollama reaches sandboxes only as this socket; their view of host loopback stays blocked.
-  ollamaDir = "${home}/.local/share/sandbox";
-  ollamaSock = "${ollamaDir}/ollama.sock";
+  ollamaSock = "/Users/${config.system.primaryUser}/.local/share/sandbox-ollama.sock";
 
   # smolvm (Homebrew, below), op (1password-cli cask), docker and trivy come from PATH.
   sandbox = pkgs.writeShellApplication {
@@ -26,17 +24,18 @@ in
   homebrew.taps = [ "smol-machines/tap" ];
   homebrew.brews = [ "smol-machines/tap/smolvm" ];
 
-  # Relays host Ollama (127.0.0.1:11434) to the socket that sandbox.sh mounts into each machine.
+  # launchd owns the socket and runs one socat per connection to host Ollama (127.0.0.1:11434),
+  # so nothing runs until a sandbox actually talks to Ollama.
   launchd.user.agents.sandbox-ollama-relay.serviceConfig = {
     ProgramArguments = [
-      "/bin/sh"
-      "-c"
-      ''
-        mkdir -p ${ollamaDir} && chmod 700 ${ollamaDir} && rm -f ${ollamaSock}
-        exec ${pkgs.socat}/bin/socat UNIX-LISTEN:${ollamaSock},fork,mode=600 TCP:127.0.0.1:11434
-      ''
+      "${pkgs.socat}/bin/socat"
+      "STDIO"
+      "TCP:127.0.0.1:11434"
     ];
-    RunAtLoad = true;
-    KeepAlive = true;
+    Sockets.ollama = {
+      SockPathName = ollamaSock;
+      SockPathMode = 384; # 0600
+    };
+    inetdCompatibility.Wait = false;
   };
 }
