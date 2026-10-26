@@ -50,7 +50,6 @@ in
       ${pkgs.bash}/bin/bash ${./link-dotfiles.sh}
   '';
   environment.systemPackages = with pkgs; [
-    lima
     sandbox
     act
     age
@@ -63,8 +62,6 @@ in
     autoconf
     automake
     awscli2
-    #    aws-sso-cli
-    #    azure-cli
     brotli
     cmake
     eksctl
@@ -107,7 +104,6 @@ in
     opencode
     opensc
     oras
-    # packer
     pnpm
     prek
     poppler-utils
