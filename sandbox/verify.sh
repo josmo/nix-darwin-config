@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Checks a sandbox machine's security claims from inside it. Run from the host:
-#   smolvm machine exec --name <name> -u agent -- bash -s < sandbox/verify.sh
+# Checks a sandbox machine's security claims from inside it. Run with: sandbox --verify
 set -u
 fail=0
 

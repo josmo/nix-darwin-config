@@ -27,6 +27,7 @@ let
       SANDBOX_IMAGE_DIR = ./sandbox/image;
       SANDBOX_SMOLFILE = ./sandbox/Smolfile;
       SANDBOX_SECRETS = ./sandbox/secrets.env;
+      SANDBOX_VERIFY = ./sandbox/verify.sh;
       SANDBOX_OLLAMA_SOCK = sandboxOllamaSock;
     };
     text = builtins.readFile ./sandbox/sandbox.sh;
