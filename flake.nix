@@ -17,7 +17,10 @@
       # $ darwin-rebuild switch --flake .
       darwinConfigurations."Joachim-MacBook-Pro" = nix-darwin.lib.darwinSystem {
         specialArgs = { inherit self; };
-        modules = [ ./configuration.nix ];
+        modules = [
+          ./configuration.nix
+          ./sandbox
+        ];
       };
       formatter.aarch64-darwin = nixpkgs.legacyPackages.aarch64-darwin.nixfmt;
     };

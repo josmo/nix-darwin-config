@@ -13,25 +13,6 @@ let
   # Pushes are pointed at SSH right after cloning.
   dotfilesRepo = "https://github.com/josmo/dotfiles.git";
   dotfilesPushUrl = "git@github.com:josmo/dotfiles.git";
-
-  # Host Ollama reaches sandboxes only as this socket; their view of host loopback stays blocked.
-  sandboxOllamaDir = "${home}/.local/share/sandbox";
-  sandboxOllamaSock = "${sandboxOllamaDir}/ollama.sock";
-
-  # smolvm microVM per repo and agent for coding agents; see sandbox/sandbox.sh.
-  # smolvm (Homebrew), op (1password-cli cask), docker and trivy come from PATH.
-  sandbox = pkgs.writeShellApplication {
-    name = "sandbox";
-    runtimeInputs = [ pkgs.git ];
-    runtimeEnv = {
-      SANDBOX_IMAGE_DIR = ./sandbox/image;
-      SANDBOX_SMOLFILE = ./sandbox/Smolfile;
-      SANDBOX_SECRETS = ./sandbox/secrets.env;
-      SANDBOX_VERIFY = ./sandbox/verify.sh;
-      SANDBOX_OLLAMA_SOCK = sandboxOllamaSock;
-    };
-    text = builtins.readFile ./sandbox/sandbox.sh;
-  };
 in
 {
   nixpkgs.config = {
@@ -50,7 +31,6 @@ in
       ${pkgs.bash}/bin/bash ${./link-dotfiles.sh}
   '';
   environment.systemPackages = with pkgs; [
-    sandbox
     act
     age
     age-plugin-yubikey
@@ -141,20 +121,6 @@ in
     DOTFILES = dotfiles;
   };
 
-  # Relays host Ollama (127.0.0.1:11434) to the socket that sandbox.sh mounts into each machine.
-  launchd.user.agents.sandbox-ollama-relay.serviceConfig = {
-    ProgramArguments = [
-      "/bin/sh"
-      "-c"
-      ''
-        mkdir -p ${sandboxOllamaDir} && chmod 700 ${sandboxOllamaDir} && rm -f ${sandboxOllamaSock}
-        exec ${pkgs.socat}/bin/socat UNIX-LISTEN:${sandboxOllamaSock},fork,mode=600 TCP:127.0.0.1:11434
-      ''
-    ];
-    RunAtLoad = true;
-    KeepAlive = true;
-  };
-
   programs.direnv = {
     enable = true;
     nix-direnv.enable = true;
@@ -174,10 +140,7 @@ in
       # 'uninstall': remove formulae/casks/taps not listed in the generated Brewfile ('zap' also purges their data)
       cleanup = "uninstall";
     };
-    taps = [
-      "gromgit/fuse"
-      "smol-machines/tap"
-    ];
+    taps = [ "gromgit/fuse" ];
     brews = [
       "aws-sso-cli"
       "awsdac"
@@ -186,7 +149,6 @@ in
       "hf"
       "jenv"
       "mlx-lm"
-      "smol-machines/tap/smolvm"
       "virt-manager"
     ];
     casks = [
