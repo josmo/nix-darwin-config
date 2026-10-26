@@ -78,7 +78,6 @@ in
     kustomize-sops
     mas
     neovim
-    nh
     nmap
     openconnect
     opencode
@@ -124,6 +123,13 @@ in
   programs.direnv = {
     enable = true;
     nix-direnv.enable = true;
+  };
+
+  # `nh darwin switch [--update]` from any directory. Scheduled `clean` needs nix.enable,
+  # which Determinate Nix owns here; run `nh clean all --keep-since 14d` by hand instead.
+  programs.nh = {
+    enable = true;
+    flake = "/private/etc/nix-darwin";
   };
 
   programs.zsh = {
