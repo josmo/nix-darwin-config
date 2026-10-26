@@ -1,68 +1,124 @@
-# Per-directory Lima sandbox for coding agents: each directory gets its own VM,
-# cloned from a provisioned base, with ONLY that directory mounted.
-# Usage: cd <repo-or-worktree> && sandbox [claude|gemini|opencode|bash] [args...]
-#        sandbox --list | --stop | --rm | --prune | --rebuild-base
-# Expects LIMA_TEMPLATE (agent-base.yaml) in the environment; set by the Nix wrapper.
+# Run a coding agent in a smolvm microVM against the current git repo; see usage below.
+# Expects SANDBOX_IMAGE_DIR, SANDBOX_SMOLFILE, SANDBOX_SECRETS, SANDBOX_VERIFY and
+# SANDBOX_OLLAMA_SOCK; set by the Nix wrapper.
 
-BASE="agent-base"
-inst="agent-$(basename "$PWD" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' - | cut -c1-20)-$(printf %s "$PWD" | shasum | cut -c1-8)"
+usage() {
+  cat <<'EOF'
+Usage: sandbox [claude|gemini|opencode|shell] [agent args...]   (default: claude)
+       sandbox --update    rebuild the image with the latest agents
+       sandbox --rm        remove this repo's sandboxes
+       sandbox --verify    run the security checks in this repo's sandbox
+       sandbox --help
 
-exists() { limactl list -q | grep -qx "$1"; }
+The repo is mounted read-only and cloned inside the VM. When the agent exits, its
+commits are fetched to sandbox/<agent>/<branch>; nothing else reaches the host:
+  git log main..sandbox/claude/main
+  git merge sandbox/claude/main
+EOF
+}
 
+die() {
+  echo "sandbox: $*" >&2
+  exit 1
+}
+
+AGENTS=(claude gemini opencode shell)
+# The image directory's store hash changes whenever its files do, so it doubles as the tag.
+TAG=$(basename "$SANDBOX_IMAGE_DIR" | cut -c1-12)
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/sandbox"
+IMAGE="$CACHE/sandbox-$TAG.tar"
+
+build_image() {
+  echo "==> Building the sandbox image (needs Docker Desktop running)..."
+  docker build "$@" -t "sandbox:$TAG" "$SANDBOX_IMAGE_DIR"
+  mkdir -p "$CACHE"
+  # Warn only: findings are mostly in upstream base-image binaries.
+  trivy image --quiet --severity HIGH,CRITICAL "sandbox:$TAG" >"$CACHE/trivy.txt" 2>&1 || true
+  echo "==> Trivy report: $CACHE/trivy.txt"
+  rm -f "$CACHE"/sandbox-*.tar*
+  docker save "sandbox:$TAG" -o "$IMAGE.tmp"
+  mv "$IMAGE.tmp" "$IMAGE"
+}
+
+mode=run
 case "${1:-}" in
-  # limactl list takes exact names, not globs, so filter by prefix here.
-  --list) mapfile -t names < <(limactl list -q | grep '^agent-') && exec limactl list "${names[@]}" ;;
-  --stop) exec limactl stop "$inst" ;;
-  --rm) exec limactl delete -f "$inst" ;;
-  # Delete clones whose project directory (first mount) no longer exists.
-  --prune)
-    # shellcheck disable=SC2016 # $i/$m are Go template vars, not shell
-    limactl list --format '{{.Name}}{{"\t"}}{{range $i, $m := .Config.Mounts}}{{if eq $i 0}}{{$m.Location}}{{end}}{{end}}' |
-      while IFS=$'\t' read -r name dir; do
-        [[ "$name" == agent-* && "$name" != "$BASE" && -n "$dir" && ! -d "$dir" ]] || continue
-        echo "==> Deleting $name ($dir is gone)"
-        limactl delete -f "$name"
-      done
+  -h | --help) usage; exit ;;
+  --update)
+    build_image --pull --no-cache
+    echo "==> Run 'sandbox --rm' in a repo to move its sandboxes to the new image."
     exit ;;
-  --rebuild-base) exec limactl delete -f "$BASE" ;;
+  --rm | --verify) mode=${1#--}; shift ;;
 esac
 
-if [ "$PWD" = / ] || [ "$PWD" = "$HOME" ]; then
-  echo "sandbox: refusing to mount $PWD; cd into a project first" >&2
-  exit 1
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not inside a git repository; cd into one first"
+repo=$(git rev-parse --show-toplevel)
+# One machine per repo and agent: <agent>-<repo name>-<hash of repo path>.
+id="$(basename "$repo" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' - | cut -c1-20)-$(printf %s "$repo" | shasum | cut -c1-8)"
+
+if [ "$mode" = rm ]; then
+  for a in "${AGENTS[@]}"; do
+    smolvm machine status --name "$a-$id" >/dev/null 2>&1 || continue
+    smolvm machine stop --name "$a-$id" >/dev/null 2>&1 || true
+    smolvm machine delete --name "$a-$id" -f >/dev/null
+    echo "==> Removed the $a sandbox"
+  done
+  exit
 fi
 
-# 1. One-time base: create, provision (probes wait for the agents), then stop so it can be cloned.
-stamp="$HOME/.lima/$BASE/sandbox-template"
-if ! exists "$BASE"; then
-  echo "==> Provisioning $BASE (one-time)..."
-  limactl create --name="$BASE" --tty=false "$LIMA_TEMPLATE"
-  limactl start --tty=false "$BASE"
-  limactl stop "$BASE"
-  echo "$LIMA_TEMPLATE" >"$stamp"
-elif [ "$(cat "$stamp" 2>/dev/null)" != "$LIMA_TEMPLATE" ]; then
-  echo "sandbox: agent-base.yaml changed; run 'sandbox --rebuild-base' to apply it" >&2
+agent=${1:-claude}
+[ $# -gt 0 ] && shift
+case "$agent" in
+  claude) cmd=(claude --dangerously-skip-permissions) ;;
+  gemini) cmd=(gemini --yolo) ;;
+  opencode) cmd=(opencode) ;;
+  shell) cmd=(bash) ;;
+  *) die "unknown agent '$agent' (try: ${AGENTS[*]})" ;;
+esac
+name="$agent-$id"
+branch=$(git branch --show-current)
+[ -n "$branch" ] || die "HEAD is detached; check out a branch first"
+
+# Create once, start if stopped. Credentials resolve from 1Password at launch and stay on the host.
+state=$(smolvm machine status --name "$name" 2>/dev/null || true)
+if [ -z "$state" ]; then
+  [ -f "$IMAGE" ] || build_image
+  echo "==> Creating the $agent sandbox for $(basename "$repo")..."
+  # The git common dir works for main checkouts and linked worktrees alike.
+  smolvm machine create --name "$name" -s "$SANDBOX_SMOLFILE" --image "$IMAGE" \
+    -v "$(git rev-parse --path-format=absolute --git-common-dir):/src.git:ro" \
+    --mount-socket "$SANDBOX_OLLAMA_SOCK:/run/ollama.sock" >/dev/null
+fi
+case "$state" in
+  *running*) ;;
+  *) op run --env-file "$SANDBOX_SECRETS" -- smolvm machine start --name "$name" >/dev/null ;;
+esac
+
+if [ "$mode" = verify ]; then
+  exec smolvm machine exec -i --name "$name" -u agent -- bash -s <"$SANDBOX_VERIFY"
 fi
 
-# 2. One-time clone for this directory. In a git worktree the shared git dir lives
-#    outside $PWD, so mount it too or git breaks inside the VM.
-if ! exists "$inst"; then
-  mounts="{\"location\": \"$PWD\", \"writable\": true}"
-  gitdir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
-  if [ -n "$gitdir" ] && [[ "$gitdir" != "$PWD"/* ]]; then
-    mounts="$mounts, {\"location\": \"$gitdir\", \"writable\": true}"
-  fi
-  echo "==> Creating $inst for $PWD..."
-  limactl clone --tty=false "$BASE" "$inst" --set ".mounts = [$mounts]"
-fi
+# Clone on first use, pointing origin at the host repo's remote.
+work="/home/agent/$(basename "$repo")"
+# shellcheck disable=SC2016 # $1-$3 belong to the guest's sh, passed as arguments
+smolvm machine exec --name "$name" -u agent -- sh -c '
+  [ -d "$1/.git" ] && exit
+  # The read-only mount keeps the host uid, so trust it for this clone only.
+  git -c safe.directory=/src.git clone -q --branch "$2" /src.git "$1"
+  if [ -n "$3" ]; then git -C "$1" remote set-url origin "$3"; fi' \
+  _ "$work" "$branch" "$(git remote get-url origin 2>/dev/null || true)"
 
-# 3. Start only if needed, so other sessions in this VM keep running.
-if [ "$(limactl list --format '{{.Status}}' "$inst")" != Running ]; then
-  limactl start --tty=false "$inst"
-fi
+# Run the agent; whatever its exit status, bring back its commits (and only those).
+status=0
+smolvm machine exec -it --name "$name" -u agent -w "$work" -- "${cmd[@]}" "$@" || status=$?
 
-# 4. Run the agent. Forward only the API keys, not the rest of the host environment.
-agent="${1:-claude}"
-shift || true
-export LIMA_SHELLENV_BLOCK='*' LIMA_SHELLENV_ALLOW=ANTHROPIC_API_KEY,GEMINI_API_KEY
-exec limactl shell --preserve-env --workdir "$PWD" "$inst" "$agent" "$@"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+if smolvm machine exec --name "$name" -u agent -w "$work" -- git bundle create - --branches >"$tmp/work.bundle" 2>/dev/null; then
+  ref="sandbox/$agent/$branch"
+  before=$(git rev-parse -q --verify "$ref" || echo "$branch")
+  # fsck: the agent wrote this bundle, so verify every object it brings.
+  git -c transfer.fsckObjects=true fetch -q "$tmp/work.bundle" "+refs/heads/*:refs/remotes/sandbox/$agent/*"
+  new=$(git log --oneline "$before..$ref" 2>/dev/null || true)
+  [ -z "$new" ] || printf '==> New agent commits on %s:\n%s\n' "$ref" "$new"
+fi
+exit "$status"

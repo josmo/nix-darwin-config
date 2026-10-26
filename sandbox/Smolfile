@@ -1,0 +1,44 @@
+# Machine config shared by every sandbox. sandbox.sh adds the image, mounts and name.
+# Changes apply to newly created machines: `smolvm machine rm <name>` to pick them up.
+
+# sandbox-init needs root for dockerd; agents run via `smolvm machine exec -u agent`.
+user = "root"
+
+# Everything not listed is denied, including the LAN and the host's loopback.
+# Find what a blocked tool needed with: smolvm machine egress-events --name <name>
+[network]
+allow_hosts = [
+  # AI APIs
+  "api.anthropic.com",
+  "generativelanguage.googleapis.com",
+  "models.dev",
+  # Package registries
+  "registry.npmjs.org",
+  "pypi.org",
+  "files.pythonhosted.org",
+  "proxy.golang.org",
+  "sum.golang.org",
+  "crates.io",
+  "ports.ubuntu.com",
+  # Code hosts
+  "github.com",
+  # Nix
+  "cache.nixos.org",
+  "channels.nixos.org",
+  "releases.nixos.org",
+  # Docker Hub
+  "docker.io",
+  "production.cloudfront.docker.com",
+]
+# allow_hosts are resolved at VM start, so domains with no address of their own go here.
+allow_host_patterns = ["*.githubusercontent.com"]
+
+# Real values come from the host env at machine start (`op run`, see secrets.env);
+# the guest only ever sees a placeholder, swapped back on requests to allowed_hosts.
+[secrets]
+CLAUDE_CODE_OAUTH_TOKEN = { from_env = "CLAUDE_CODE_OAUTH_TOKEN" }
+
+[[network.credentials]]
+name = "claude"
+environment_variable = "CLAUDE_CODE_OAUTH_TOKEN"
+allowed_hosts = ["api.anthropic.com"]

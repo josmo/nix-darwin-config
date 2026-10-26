@@ -13,17 +13,6 @@ let
   # Pushes are pointed at SSH right after cloning.
   dotfilesRepo = "https://github.com/josmo/dotfiles.git";
   dotfilesPushUrl = "git@github.com:josmo/dotfiles.git";
-
-  # Per-directory Lima VM for coding agents; see sandbox/sandbox.sh.
-  sandbox = pkgs.writeShellApplication {
-    name = "sandbox";
-    runtimeInputs = [
-      pkgs.lima
-      pkgs.git
-    ];
-    runtimeEnv.LIMA_TEMPLATE = ./sandbox/agent-base.yaml;
-    text = builtins.readFile ./sandbox/sandbox.sh;
-  };
 in
 {
   nixpkgs.config = {
@@ -42,8 +31,6 @@ in
       ${pkgs.bash}/bin/bash ${./link-dotfiles.sh}
   '';
   environment.systemPackages = with pkgs; [
-    lima
-    sandbox
     act
     age
     age-plugin-yubikey
@@ -55,8 +42,6 @@ in
     autoconf
     automake
     awscli2
-#    aws-sso-cli
-#    azure-cli
     brotli
     cmake
     eksctl
@@ -93,13 +78,11 @@ in
     kustomize-sops
     mas
     neovim
-    nh
     nmap
     openconnect
     opencode
     opensc
     oras
-    # packer
     pnpm
     prek
     poppler-utils
@@ -140,6 +123,13 @@ in
   programs.direnv = {
     enable = true;
     nix-direnv.enable = true;
+  };
+
+  # `nh darwin switch [--update]` from any directory. Scheduled `clean` needs nix.enable,
+  # which Determinate Nix owns here; run `nh clean all --keep-since 14d` by hand instead.
+  programs.nh = {
+    enable = true;
+    flake = "/private/etc/nix-darwin";
   };
 
   programs.zsh = {
