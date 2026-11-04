@@ -80,7 +80,6 @@ in
     neovim
     nmap
     openconnect
-    opencode
     opensc
     oras
     pnpm
@@ -156,6 +155,7 @@ in
       "hf"
       "jenv"
       "mlx-lm"
+      "opencode"
       "virt-manager"
     ];
     casks = [
@@ -199,8 +199,8 @@ in
       "sourcetree"
       "stats"
       "transmission"
-      "unity"
-      "unity-hub"
+      #"unity"
+      #"unity-hub"
       "visual-studio-code"
       "vlc"
       "zoom"

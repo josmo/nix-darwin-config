@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Symlink tracked dotfiles from $DOTFILES into $HOME. Invoked by the nix-darwin
+# Symlink (or copy, per .dotfiles-copy) tracked dotfiles from $DOTFILES into $HOME. Invoked by the nix-darwin
 # activation script as the primary user (not root). Expects DOTFILES,
 # DOTFILES_REPO and DOTFILES_PUSH_URL in the environment.
 set -euo pipefail
@@ -13,17 +13,29 @@ if [ ! -d "$DOTFILES/.git" ]; then
   git -C "$DOTFILES" remote set-url --push origin "$DOTFILES_PUSH_URL"
 fi
 
-# Link every tracked path starting with a dot (except .gitignore) to the same path
-# under $HOME. Tracked-only, so ignored/untracked files are never linked. Files are
-# linked individually, never whole ~/.config/<tool> dirs, so caches stay out of git.
-git -C "$DOTFILES" ls-files | grep '^\.' | grep -vx '.gitignore' | while read -r f; do
+# Mirror every tracked path starting with a dot to the same path under $HOME.
+# Tracked-only, so ignored/untracked files never land. Files are handled one by one,
+# never whole ~/.config/<tool> dirs, so caches stay out of git.
+# Default is a symlink; paths matching a glob in .dotfiles-copy are copied instead
+# (for tools like apm that refuse symlinks). Copies are overwritten: repo wins.
+copy_globs=$(grep -v -e '^#' -e '^$' "$DOTFILES/.dotfiles-copy" 2>/dev/null || true)
+is_copy() {
+  local p
+  while IFS= read -r p; do
+    [ -n "$p" ] && [[ $1 == $p ]] && return 0  # unquoted $p = glob; * also matches /
+  done <<< "$copy_globs"
+  return 1
+}
+
+git -C "$DOTFILES" ls-files | grep '^\.' | grep -vxE '\.gitignore|\.dotfiles-copy' | while read -r f; do
   mkdir -p "$HOME/$(dirname "$f")"
-  ln -sfn "$DOTFILES/$f" "$HOME/$f"
+  if is_copy "$f"; then
+    rm -f "$HOME/$f"  # never cp through a leftover symlink into the repo
+    cp "$DOTFILES/$f" "$HOME/$f"
+  else
+    ln -sfn "$DOTFILES/$f" "$HOME/$f"
+  fi
 done
-# apm refuses any symlink under ~/.apm, so copy the config in instead (repo wins).
-[ -L "$HOME/.apm" ] && rm "$HOME/.apm"
-mkdir -p "$HOME/.apm"
-cp -R "$DOTFILES"/apm/{apm.yml,config.json,marketplaces.json,packages} "$HOME/.apm/"
 
 # Prune: remove links into the repo whose target no longer exists (file was git rm'd).
 find "$HOME" -maxdepth 1 -type l -lname "$DOTFILES/*" ! -exec test -e {} \; -print -delete
