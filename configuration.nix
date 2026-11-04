@@ -151,6 +151,7 @@ in
       "aws-sso-cli"
       "awsdac"
       "cfn-lint"
+      "cosign"
       "gromgit/fuse/sshfs-mac"
       "hf"
       "jenv"

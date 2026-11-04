@@ -10,6 +10,7 @@ user = "root"
 allow_hosts = [
   # AI APIs
   "api.anthropic.com",
+  "platform.claude.com",
   "generativelanguage.googleapis.com",
   "models.dev",
   # Package registries

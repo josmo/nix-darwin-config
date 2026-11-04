@@ -32,7 +32,7 @@ starts from your last commit; uncommitted changes aren't copied in.
 ## Setup (once)
 
 1. `nh darwin switch` — installs `sandbox`, smolvm and the Ollama relay.
-2. In 1Password, vault `grannec`: create item `claude-sandbox` with a `credential` field
+2. In 1Password (account `grannec`), vault `Private`: create item `claude-sandbox` with a `credential` field
    containing the output of `claude setup-token`.
 3. Have Docker Desktop running for the first run; it builds the image (a few minutes).
 
@@ -51,7 +51,7 @@ starts from your last commit; uncommitted changes aren't copied in.
 | File | What it controls |
 |------|------------------|
 | `Smolfile` | Network allowlist, credential bindings |
-| `secrets.env` | 1Password references (`op://grannec/<service>-sandbox/credential`); no values |
+| `secrets.env` | 1Password references (`op://Private/<service>-sandbox/credential`); no values |
 | `image/Dockerfile` | Tools in the VM: agents, Nix, Docker, direnv |
 | `image/sandbox-init` | VM main process: starts dockerd and the Ollama relay |
 | `sandbox.sh` | The `sandbox` command |
@@ -60,7 +60,7 @@ starts from your last commit; uncommitted changes aren't copied in.
 
 Changes to `Smolfile` or the image apply to new machines: run `sandbox --rm`, then `sandbox`.
 
-To add a secret (e.g. Gemini): add `GEMINI_API_KEY=op://grannec/gemini-sandbox/credential`
+To add a secret (e.g. Gemini): add `GEMINI_API_KEY=op://Private/gemini-sandbox/credential`
 to `secrets.env`, and a matching `[secrets]` entry and `[[network.credentials]]` block
 to `Smolfile`.
 

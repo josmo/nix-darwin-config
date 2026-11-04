@@ -21,8 +21,8 @@ in
 {
   environment.systemPackages = [ sandbox ];
 
-  homebrew.taps = [ "smol-machines/tap" ];
-  homebrew.brews = [ "smol-machines/tap/smolvm" ];
+  homebrew.taps = [ "smol-machines/tap" "pelotech/tap" ];
+  homebrew.brews = [ "smol-machines/tap/smolvm" "pelotech/tap/smolbento" ];
 
   # launchd owns the socket and runs one socat per connection to host Ollama (127.0.0.1:11434),
   # so nothing runs until a sandbox actually talks to Ollama.

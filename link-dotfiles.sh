@@ -20,7 +20,10 @@ git -C "$DOTFILES" ls-files | grep '^\.' | grep -vx '.gitignore' | while read -r
   mkdir -p "$HOME/$(dirname "$f")"
   ln -sfn "$DOTFILES/$f" "$HOME/$f"
 done
-ln -sfn "$DOTFILES/apm" "$HOME/.apm"
+# apm refuses any symlink under ~/.apm, so copy the config in instead (repo wins).
+[ -L "$HOME/.apm" ] && rm "$HOME/.apm"
+mkdir -p "$HOME/.apm"
+cp -R "$DOTFILES"/apm/{apm.yml,config.json,marketplaces.json,packages} "$HOME/.apm/"
 
 # Prune: remove links into the repo whose target no longer exists (file was git rm'd).
 find "$HOME" -maxdepth 1 -type l -lname "$DOTFILES/*" ! -exec test -e {} \; -print -delete
