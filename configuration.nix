@@ -1,18 +1,18 @@
 {
   pkgs,
   self,
+  user,
   ...
 }:
 let
-  user = "jhill";
-  home = "/Users/${user}";
+  home = "/Users/${user.username}";
   # Single source of truth for the dotfiles checkout. Exported as $DOTFILES for shells
   # (see environment.variables) and used by the activation script below.
-  dotfiles = "${home}/Development/workspace/src/github.com/josmo/dotfiles";
+  dotfiles = if user.dotfiles == null then null else "${home}/${user.dotfiles.dir}";
   # HTTPS for the bootstrap clone: activation runs under sudo with no ssh-agent or keys.
   # Pushes are pointed at SSH right after cloning.
-  dotfilesRepo = "https://github.com/josmo/dotfiles.git";
-  dotfilesPushUrl = "git@github.com:josmo/dotfiles.git";
+  dotfilesRepo = "https://github.com/${user.dotfiles.repo}.git";
+  dotfilesPushUrl = "git@github.com:${user.dotfiles.repo}.git";
 in
 {
   nixpkgs.config = {
@@ -21,13 +21,13 @@ in
       fabric.broken = "warn";
     };
   };
-  system.primaryUser = user;
+  system.primaryUser = user.username;
   nix.enable = false;
 
   # Replaces the geerlingguy.dotfiles Ansible role: symlink dotfiles from the repo into $HOME.
   # Activation runs as root, so the script is run as the primary user. See link-dotfiles.sh.
-  system.activationScripts.postActivation.text = ''
-    sudo --set-home --user=${user} -- env DOTFILES=${dotfiles} DOTFILES_REPO=${dotfilesRepo} DOTFILES_PUSH_URL=${dotfilesPushUrl} \
+  system.activationScripts.postActivation.text = pkgs.lib.optionalString (dotfiles != null) ''
+    sudo --set-home --user=${user.username} -- env DOTFILES=${dotfiles} DOTFILES_REPO=${dotfilesRepo} DOTFILES_PUSH_URL=${dotfilesPushUrl} \
       ${pkgs.bash}/bin/bash ${./link-dotfiles.sh}
   '';
   environment.systemPackages = with pkgs; [
@@ -116,8 +116,8 @@ in
 
   environment.variables = {
     EDITOR = "nvim";
-    DOTFILES = dotfiles;
-  };
+  }
+  // pkgs.lib.optionalAttrs (dotfiles != null) { DOTFILES = dotfiles; };
 
   programs.direnv = {
     enable = true;
@@ -236,5 +236,5 @@ in
   system.stateVersion = 6;
 
   # The platform the configuration will be used on.
-  nixpkgs.hostPlatform = "aarch64-darwin";
+  nixpkgs.hostPlatform = user.system;
 }
