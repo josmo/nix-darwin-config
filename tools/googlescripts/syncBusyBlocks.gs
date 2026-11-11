@@ -75,6 +75,11 @@ const CONFIG = {
   // How many days back to look when cleaning up expired blocks
   PAST_DAYS_TO_CLEAN: 7,
 
+  // How many hours a finished event's Busy block and Phone View mirror are kept
+  // before being removed (so a meeting that runs long doesn't vanish mid-call).
+  // Keep this below PAST_DAYS_TO_CLEAN * 24, or older ones will never be cleaned up.
+  KEEP_PAST_HOURS: 6,
+
   // Set to true to treat "Maybe" (Tentative) RSVP events as Busy; false to ignore them
   INCLUDE_MAYBE_EVENTS: false,
 
@@ -127,6 +132,9 @@ function syncBusyBlocks() {
     const cleanStart = addDays(now, -CONFIG.PAST_DAYS_TO_CLEAN);
     const syncEnd = addDays(now, CONFIG.DAYS_IN_FUTURE);
 
+    // Events that ended before this are dropped from both the Busy blocks and the mirror
+    const keepFrom = new Date(now.getTime() - CONFIG.KEEP_PAST_HOURS * 3600000);
+
     // Track total write operations across both steps to stay within quota
     const budget = { remaining: CONFIG.MAX_WRITES_PER_RUN };
 
@@ -138,7 +146,7 @@ function syncBusyBlocks() {
     // ========================================================================
     Logger.log('--- Step 1: Syncing Busy Blocks to Primary Calendar ---');
     const existingBlocks = primaryEvents.filter(isManagedBusyItem);
-    const desiredBlocks = mergeIntervals(fetchBusySlotsFromSources(now, syncEnd)).map(toBusyBlock);
+    const desiredBlocks = mergeIntervals(fetchBusySlotsFromSources(keepFrom, syncEnd)).map(toBusyBlock);
 
     deltaSync(CONFIG.TARGET_CALENDAR_ID, existingBlocks, desiredBlocks, busyKey, budget, 'BUSY');
 
@@ -147,7 +155,7 @@ function syncBusyBlocks() {
     // ========================================================================
     if (CONFIG.ENABLE_PHONE_VIEW_MIRROR) {
       Logger.log(`--- Step 2: Syncing Real Work Events to "${CONFIG.PHONE_VIEW_CALENDAR_NAME}" ---`);
-      const workEvents = primaryEvents.filter(item => isRealWorkEvent(item, now));
+      const workEvents = primaryEvents.filter(item => isRealWorkEvent(item, keepFrom));
       syncPhoneViewMirror(workEvents, cleanStart, syncEnd, budget);
     }
   });
@@ -218,13 +226,13 @@ function toBusyBlock(slot) {
 /**
  * Reads all source calendars and returns an array of { start, end } busy slots.
  */
-function fetchBusySlotsFromSources(now, syncEnd) {
+function fetchBusySlotsFromSources(start, syncEnd) {
   const slots = [];
 
   for (const calId of CONFIG.SOURCE_CALENDAR_IDS) {
     let items;
     try {
-      items = listEvents(calId, now, syncEnd);
+      items = listEvents(calId, start, syncEnd);
     } catch (err) {
       Logger.log(`Warning: Cannot access calendar ${calId}: ${err.message}`);
       continue;
@@ -259,8 +267,10 @@ function isBusySourceEvent(item) {
 // ============================================================================
 
 /**
- * Mirrors genuine work events onto the secondary Phone View calendar
- * using a signature-based Delta Sync.
+ * Mirrors genuine work events onto the secondary Phone View calendar.
+ * Mirrors are matched to their source event by ID and updated in place when the
+ * content changes, so the mirror keeps its event ID (a delete + recreate makes the
+ * event disappear on phones until the next refresh).
  */
 function syncPhoneViewMirror(workEvents, cleanStart, syncEnd, budget) {
   const phoneCalId = findPhoneViewCalendarId() || (CONFIG.DRY_RUN ? null : createPhoneViewCalendar());
@@ -273,30 +283,73 @@ function syncPhoneViewMirror(workEvents, cleanStart, syncEnd, budget) {
     ? listTaggedEvents(phoneCalId, cleanStart, syncEnd, CONFIG.PHONE_MIRROR_TAG_VALUE)
     : [];
 
-  deltaSync(phoneCalId, existingMirrors, desiredMirrors, mirrorKey, budget, 'MIRROR');
+  const desiredMap = new Map(desiredMirrors.map(ev => [mirrorKey(ev), ev]));
+  let kept = 0, updated = 0, deleted = 0, created = 0;
+
+  // 1. Keep unchanged mirrors, update changed ones in place, delete the rest
+  //    (source gone, duplicates, and legacy mirrors without a source ID)
+  for (const ev of existingMirrors) {
+    const srcId = mirrorKey(ev);
+    const desired = desiredMap.get(srcId);
+
+    if (!desired) {
+      if (!tryWrite(budget, `[DELETE MIRROR] ${describeEvent(ev)}`, () => Calendar.Events.remove(phoneCalId, ev.id))) break;
+      deleted++;
+      continue;
+    }
+
+    if (mirrorSig(ev) === mirrorSig(desired)) {
+      kept++;
+      if (CONFIG.DRY_RUN) {
+        Logger.log(`[KEEP MIRROR]   ${describeEvent(ev)}`);
+      }
+    } else {
+      // Full update (not patch) so stale fields can't linger, e.g. timed -> all-day
+      if (!tryWrite(budget, `[UPDATE MIRROR] ${describeEvent(desired)}`, () => Calendar.Events.update(desired, phoneCalId, ev.id))) break;
+      updated++;
+    }
+    desiredMap.delete(srcId);
+  }
+
+  // 2. Create whatever is still missing
+  for (const ev of desiredMap.values()) {
+    if (!tryWrite(budget, `[CREATE MIRROR] ${describeEvent(ev)}`, () => Calendar.Events.insert(ev, phoneCalId))) break;
+    created++;
+  }
+
+  const modePrefix = CONFIG.DRY_RUN ? '[DRY RUN] ' : '';
+  Logger.log(`${modePrefix}MIRROR sync complete — Kept: ${kept}, Updated: ${updated}, Created: ${created}, Deleted: ${deleted}`);
 }
 
 /**
- * Real work events: upcoming, not our Busy blocks, not working-location banners,
- * and not declined.
+ * Real work events: not ended before `cutoff`, not our Busy blocks, not
+ * working-location banners, and not declined.
  */
-function isRealWorkEvent(item, now) {
+function isRealWorkEvent(item, cutoff) {
   if (isManagedBusyItem(item)) return false;
   if (item.eventType === 'workingLocation') return false;
   if (selfResponse(item) === 'declined') return false;
-  return eventDate(item.end) > now;
+  return eventDate(item.end) > cutoff;
 }
 
 /**
- * Mirrors are identified by the signature stored on them at creation time.
+ * Mirrors are matched to their source event by the source's event ID.
  */
 function mirrorKey(item) {
+  return item.extendedProperties?.shared?.source_event_id;
+}
+
+/**
+ * Content hash stored on a mirror; a mismatch means the source event changed.
+ */
+function mirrorSig(item) {
   return item.extendedProperties?.shared?.mirror_sig;
 }
 
 /**
- * Builds the Phone View copy of a work event, tagged with a hash of its full content
- * so any change (title, time, location, details, attendees) triggers a clean replacement.
+ * Builds the Phone View copy of a work event, tagged with its source event ID and a
+ * hash of its content so any change (title, time, location, details, attendees)
+ * is detected and applied to the existing mirror.
  */
 function toMirrorEvent(item) {
   const mirror = {
@@ -311,7 +364,8 @@ function toMirrorEvent(item) {
   mirror.extendedProperties = {
     shared: {
       [CONFIG.TAG_KEY]: CONFIG.PHONE_MIRROR_TAG_VALUE,
-      mirror_sig: digest(item.id + JSON.stringify(mirror))
+      source_event_id: item.id,
+      mirror_sig: digest(JSON.stringify(mirror))
     }
   };
   return mirror;
@@ -393,30 +447,36 @@ function withScriptLock(label, fn) {
 
 /**
  * Delta-syncs a calendar: keeps existing events whose key (via `keyOf`) is desired,
- * deletes the rest, then inserts any desired event resources still missing.
+ * inserts any desired event resources still missing, then deletes the rest.
+ * Creating before deleting means a moved block never leaves the time uncovered.
  */
 function deltaSync(calendarId, existing, desired, keyOf, budget, label) {
   const desiredMap = new Map(desired.map(ev => [keyOf(ev), ev]));
+  const stale = [];
   let kept = 0, deleted = 0, created = 0;
 
-  // 1. Keep matches (first one wins, so duplicates get deleted), delete everything else
+  // 1. Keep matches (first one wins, so duplicates count as stale)
   for (const ev of existing) {
     if (desiredMap.delete(keyOf(ev))) {
       kept++;
       if (CONFIG.DRY_RUN) {
         Logger.log(`[KEEP ${label}]   ${describeEvent(ev)}`);
       }
-      continue;
+    } else {
+      stale.push(ev);
     }
-
-    if (!tryWrite(budget, `[DELETE ${label}] ${describeEvent(ev)}`, () => Calendar.Events.remove(calendarId, ev.id))) break;
-    deleted++;
   }
 
   // 2. Create whatever is still missing
   for (const ev of desiredMap.values()) {
     if (!tryWrite(budget, `[CREATE ${label}] ${describeEvent(ev)}`, () => Calendar.Events.insert(ev, calendarId))) break;
     created++;
+  }
+
+  // 3. Delete everything that is no longer wanted
+  for (const ev of stale) {
+    if (!tryWrite(budget, `[DELETE ${label}] ${describeEvent(ev)}`, () => Calendar.Events.remove(calendarId, ev.id))) break;
+    deleted++;
   }
 
   const modePrefix = CONFIG.DRY_RUN ? '[DRY RUN] ' : '';
