@@ -196,7 +196,7 @@ in
       "realvnc-connect-viewer"
       "rectangle"
       "slack"
-      "sourcetree"
+      "sourcegit"
       "stats"
       "transmission"
       #"unity"
