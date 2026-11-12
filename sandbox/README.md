@@ -13,7 +13,7 @@ sandbox gemini          # or: opencode, shell, … (sbt run --help lists agents)
 sandbox claude -- -c    # arguments after -- go to the agent
 ```
 
-`sandbox` is `sbt run --clone --kit <nix-tools kit>`. Everything else is plain `sbt`:
+`sandbox` is `sbt run --clone` with the two kits below. Everything else is plain `sbt`:
 
 ```sh
 sbt ls                         # sandboxes
@@ -40,11 +40,23 @@ from your last commit; uncommitted changes aren't copied in.
    sbt policy init balanced
    sbt policy allow network localhost
    ```
-3. The Claude token, from 1Password (`claude setup-token` output in vault `Private`, item
-   `claude-sandbox`, field `credential`; read at each sandbox start):
-   ```sh
-   sbt secret set claude --ref op://Private/claude-sandbox/credential
-   ```
+3. In 1Password: an item `claude-sandbox` in vault `Private` whose `credential` field holds
+   `claude setup-token`'s output, and the SSH agent turned on with your signing key in it.
+   Set `user.signingkey` in your git config to the public key (`ssh-rsa AAAA...`).
+
+smolbento's settings (the 1Password SSH agent socket) and secret references
+(`claude` → `op://Private/claude-sandbox/credential`) live in the dotfiles repo as
+`.config/smolbento/config.toml` and `secrets.toml`, linked into `~/.config/smolbento/`.
+`sbt settings set` and `sbt secret set` write through the links: commit the change in dotfiles.
+`policy.toml` stays local (smolbento keeps per-sandbox rules there).
+
+## The git-signing kit
+
+`git-signing/git-signing.yaml` gives the sandbox your git identity (`user.name`/`user.email`
+from the repo you run `sandbox` in) and, when `user.signingkey` is set, SSH-signed commits.
+The private key stays in 1Password: smolbento forwards your SSH agent into the sandbox while
+you're attached (listing keys and signing only), and 1Password asks you to approve. Commits
+come back with their signatures.
 
 ## The nix-tools kit
 
@@ -70,4 +82,5 @@ Kit changes, policy host access and new secret services apply to **new** sandbox
 | Agent plants git hooks, config or `.envrc` | Only commits come back (`git fetch`, objects fsck'd) |
 | Data exfiltration | Network is deny-by-default plus the `balanced` allow list |
 | Credential theft | The VM sees a placeholder; the real token is swapped in on the host, only for Anthropic's hosts |
+| Signing as you | While you're attached, the agent can ask your SSH agent to sign; 1Password asks you to approve. Every key in the agent is offered, not just the signing key |
 | Reaching host services | **Open:** every host loopback port is reachable (for Ollama), until smolvm can open a single port |

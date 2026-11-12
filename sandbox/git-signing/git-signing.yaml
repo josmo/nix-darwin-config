@@ -1,0 +1,33 @@
+# syntax=docker/sandbox-kit:3
+# Your git identity, and SSH commit signing through your forwarded SSH agent; see ../README.md.
+schemaVersion: "3"
+kind: mixin
+displayName: Git signing
+description: Host git user.name/email, and SSH-signed commits with a key from the host's SSH agent.
+version: "1.0.0"
+provides: [git-signing]
+
+args:
+  signingKey:
+    # The public key (e.g. "ssh-rsa AAAA..."); the `sandbox` command passes your user.signingkey.
+    # Empty: commits aren't signed.
+    default: ""
+    # Keeps the value inside the single quotes of the install step below: no quotes, no `$`.
+    pattern: '^[A-Za-z0-9@.+/= -]*$'
+
+capabilities:
+  # user.name and user.email from `git config` on the host, in the repo you run from.
+  - type: com.docker.sandbox/git-identity@1
+
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      install:
+        - command: |
+            set -e
+            key='${{ kit.args.signingKey }}'
+            [ -n "$key" ] || exit 0
+            git config --system gpg.format ssh
+            git config --system user.signingkey "key::$key"
+            git config --system commit.gpgsign true
+          user: "0"
+          description: Sign commits with the host's SSH key

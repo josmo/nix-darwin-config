@@ -2,19 +2,21 @@
 # Usage: `sandbox [agent] [-- agent args]`; see README.md.
 { pkgs, ... }:
 let
-  # The kit in the store, in a directory still named nix-tools: smolbento names a local kit
-  # after its directory.
-  kits = pkgs.runCommand "sandbox-kits" { } ''
-    mkdir -p $out/nix-tools
-    cp ${./nix-tools}/* $out/nix-tools/
-  '';
+  # This directory in the store; its kit directories keep their names, which smolbento uses as
+  # the kit names.
+  kits = ./.;
 
-  # sbt (Homebrew, below) comes from PATH.
+  # sbt (Homebrew, below) and git come from PATH.
   sandbox = pkgs.writeShellApplication {
     name = "sandbox";
     text = ''
       [ $# -gt 0 ] || set -- claude
-      exec sbt run --clone --kit ${kits}/nix-tools "$@"
+      # user.signingkey is the public key itself ("ssh-rsa AAAA..."); empty: no signing.
+      key=$(git config user.signingkey || true)
+      exec sbt run --clone \
+        --kit ${kits}/nix-tools \
+        --kit ${kits}/git-signing --kit-arg "git-signing.signingKey=''${key#key::}" \
+        "$@"
     '';
   };
 in
