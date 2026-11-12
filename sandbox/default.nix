@@ -25,6 +25,8 @@ in
 
   # smolvm is a dependency of smolbento, but stays listed: Homebrew 7 only loads formulae from
   # trusted taps, and brew bundle trusts the formulae its Brewfile names.
-  homebrew.taps = [ "smol-machines/tap" "pelotech/tap" ];
+  homebrew.taps = [ "smol-machines/tap" "pelotech/tap" "docker/tap" ];
   homebrew.brews = [ "smol-machines/tap/smolvm" "pelotech/tap/smolbento" ];
+  # Docker Sandboxes, alongside smolbento.
+  homebrew.casks = [ "docker/tap/sbx" ];
 }
