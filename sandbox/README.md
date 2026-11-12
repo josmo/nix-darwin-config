@@ -1,75 +1,73 @@
 # sandbox
 
-Run a coding agent (Claude, Gemini, OpenCode) in a [smolvm](https://github.com/smol-machines/smolvm)
-microVM against the current git repo. The agent works on its own clone with locked-down
-network access and no real credentials. Only its commits come back.
+Run a coding agent (Claude, Gemini, OpenCode, …) in a microVM with
+[smolbento](https://github.com/pelotech/smolbento) (`sbt`). The agent works on its own clone of
+the repo, with filtered network access and no real credentials. Only its commits come back.
 
 ## Usage
 
 ```sh
 cd <git repo>
 sandbox                 # Claude (default)
-sandbox gemini          # or: opencode, shell
-sandbox claude -c       # anything after the agent name goes to the agent
-
-sandbox --update        # rebuild the image with the latest agents
-sandbox --rm            # remove this repo's sandboxes
-sandbox --verify        # run the security checks inside this repo's sandbox
-sandbox --help
+sandbox gemini          # or: opencode, shell, … (sbt run --help lists agents)
+sandbox claude -- -c    # arguments after -- go to the agent
 ```
 
-When the agent exits, its new commits are fetched to `sandbox/<agent>/<branch>`:
+`sandbox` is `sbt run --clone --kit <nix-tools kit>`. Everything else is plain `sbt`:
 
 ```sh
-git log  main..sandbox/claude/main
-git diff main sandbox/claude/main
-git merge sandbox/claude/main
+sbt ls                         # sandboxes
+sbt rm claude-<repo>           # remove one (also removes its git remote: merge first)
+sbt policy log                 # what the network policy blocked
 ```
 
-Each repo + agent gets one machine, created on first use and reused after. The agent
-starts from your last commit; uncommitted changes aren't copied in.
+When the agent exits, its commits are fetched to the remote `sandbox-<agent>-<repo>`:
+
+```sh
+git log  main..sandbox-claude-<repo>/main
+git merge sandbox-claude-<repo>/main
+```
+
+Each repo + agent gets one sandbox, created on first use and reused after. The clone starts
+from your last commit; uncommitted changes aren't copied in.
 
 ## Setup (once)
 
-1. `nh darwin switch` — installs `sandbox`, smolvm and the Ollama relay.
-2. In 1Password, vault `Private`: create item `claude-sandbox` with a `credential` field
-   containing the output of `claude setup-token`.
-3. Have Docker Desktop running for the first run; it builds the image (a few minutes).
+1. `nh darwin switch`: installs smolbento (with smolvm) and the `sandbox` command.
+2. Network policy, and host access for Ollama (opens **every** port on the host's localhost
+   to sandboxes created afterwards):
+   ```sh
+   sbt policy init balanced
+   sbt policy allow network localhost
+   ```
+3. The Claude token, from 1Password (`claude setup-token` output in vault `Private`, item
+   `claude-sandbox`, field `credential`; read at each sandbox start):
+   ```sh
+   sbt secret set claude --ref op://Private/claude-sandbox/credential
+   ```
+
+## The nix-tools kit
+
+`nix-tools/nix-tools.yaml` is a smolbento v3 mixin kit (needs smolbento 0.15.2+) that adds to
+every sandbox `sandbox` creates:
+
+- Nix (pinned, checksummed installer, single-user, flakes on) and direnv, installed on the
+  sandbox's first start;
+- `PATH` with the Nix profile first, `OLLAMA_HOST=http://host.docker.internal:11434`,
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
+- network access to the Nix caches.
+
+Docker inside the sandbox comes from smolbento's built-in `docker` kit.
+
+Kit changes, policy host access and new secret services apply to **new** sandboxes:
+`sbt rm <name>`, then `sandbox` again. Check a kit edit with `sbt kit validate ./nix-tools`.
 
 ## How it stays safe
 
 | Risk | Protection |
 |------|------------|
-| Agent damages your files | The repo's git dir is mounted read-only; the agent works on a clone in the VM |
-| Agent plants git hooks, config or `.envrc` | Only commits come back (`git bundle`, fsck'd); nothing else reaches the host |
-| Data exfiltration | Network is deny-by-default; only hosts in `Smolfile` are reachable |
-| Credential theft | The VM sees a placeholder; smolvm swaps in the real token on the host, only for `api.anthropic.com` |
-| Reaching host services | Host loopback and LAN are blocked; Ollama is exposed only through one socket |
-
-## Configuration
-
-| File | What it controls |
-|------|------------------|
-| `Smolfile` | Network allowlist, credential bindings |
-| `secrets.env` | 1Password references (`op://Private/<service>-sandbox/credential`); no values |
-| `image/Dockerfile` | Tools in the VM: agents, Nix, Docker, direnv |
-| `image/sandbox-init` | VM main process: starts dockerd and the Ollama relay |
-| `sandbox.sh` | The `sandbox` command |
-| `default.nix` | nix-darwin module: packages the command, smolvm, Ollama relay |
-| `verify.sh` | Checks run by `sandbox --verify` |
-
-Changes to `Smolfile` or the image apply to new machines: run `sandbox --rm`, then `sandbox`.
-
-To add a secret (e.g. Gemini): add `GEMINI_API_KEY=op://Private/gemini-sandbox/credential`
-to `secrets.env`, and a matching `[secrets]` entry and `[[network.credentials]]` block
-to `Smolfile`.
-
-## Troubleshooting
-
-- **A tool can't reach something** — see what was blocked, then add the host to `Smolfile`:
-  `smolvm machine egress-events --name <machine>` (machine names: `smolvm machine ls`).
-- **Something seems off** — `sandbox --verify` should print all `ok`.
-- **Ollama returns 403** — clients must use `http://localhost:11434` (already set as
-  `OLLAMA_HOST` in the VM); Ollama rejects other host names.
-- **1Password prompts** — Touch ID is asked when a machine starts, not on every run.
-- **Image scan** — each build writes a Trivy report to `~/.cache/sandbox/trivy.txt`.
+| Agent damages your files | The repo is mounted read-only; the agent works on a clone in the VM |
+| Agent plants git hooks, config or `.envrc` | Only commits come back (`git fetch`, objects fsck'd) |
+| Data exfiltration | Network is deny-by-default plus the `balanced` allow list |
+| Credential theft | The VM sees a placeholder; the real token is swapped in on the host, only for Anthropic's hosts |
+| Reaching host services | **Open:** every host loopback port is reachable (for Ollama), until smolvm can open a single port |

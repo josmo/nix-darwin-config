@@ -1,0 +1,55 @@
+# syntax=docker/sandbox-kit:3
+# Nix, direnv and host Ollama for the `sandbox` command; see ../README.md.
+schemaVersion: "3"
+kind: mixin
+displayName: Nix tools
+description: Nix with flakes, direnv, and host Ollama via host.docker.internal.
+version: "1.0.0"
+provides: [nix-tools]
+
+# v3 kits set env vars through args: each default is exported under its `env:` name.
+args:
+  PATH:
+    # The agent image's PATH with the Nix profile in front (a kit can't append to it).
+    default: "/home/agent/.nix-profile/bin:/home/agent/.local/bin:/usr/local/share/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    env: PATH
+  OLLAMA_HOST:
+    default: "http://host.docker.internal:11434"
+    env: OLLAMA_HOST
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:
+    default: "1"
+    env: CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+
+capabilities:
+  - type: com.docker.sandbox/network-policy@2
+    config:
+      install:
+        allow: [{hosts: [releases.nixos.org]}]
+      runtime:
+        # channels.nixos.org serves the flake registry's `nixpkgs` (e.g. nix run nixpkgs#hello).
+        allow: [{hosts: [cache.nixos.org, channels.nixos.org]}]
+
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      install:
+        - command: |
+            set -e
+            apt-get update
+            apt-get install -y --no-install-recommends direnv
+            mkdir -p -m 0755 /nix
+            chown agent /nix
+          user: "0"
+          description: Install direnv and create /nix for a single-user install
+        - command: |
+            set -e
+            # Pinned release; the installer is checksummed before it runs (it verifies its own tarball).
+            NIX_VERSION=2.33.3
+            NIX_INSTALL_SHA256=5562c30835680f229ba3f160c707f3aa63d88fe7d9e6eea84f669c796ac64d26
+            curl -fsSL -o /tmp/install-nix "https://releases.nixos.org/nix/nix-$NIX_VERSION/install"
+            echo "$NIX_INSTALL_SHA256  /tmp/install-nix" | sha256sum -c -
+            sh /tmp/install-nix --no-daemon --no-channel-add --yes
+            rm /tmp/install-nix
+            mkdir -p ~/.config/nix
+            echo 'experimental-features = nix-command flakes' > ~/.config/nix/nix.conf
+          user: agent
+          description: Install Nix (pinned, checksummed installer)

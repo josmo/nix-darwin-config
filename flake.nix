@@ -30,9 +30,7 @@
 
       # $ nix flake check   Lints every shell script in the repo.
       checks.${user.system}.shellcheck = pkgs.runCommand "shellcheck" { } ''
-        ${pkgs.shellcheck}/bin/shellcheck ${./link-dotfiles.sh} ${./sandbox/verify.sh} ${./sandbox/image/sandbox-init}
-        # A writeShellApplication body: no shebang, so name the shell.
-        ${pkgs.shellcheck}/bin/shellcheck --shell=bash ${./sandbox/sandbox.sh}
+        ${pkgs.shellcheck}/bin/shellcheck ${./link-dotfiles.sh}
         touch $out
       '';
     };
