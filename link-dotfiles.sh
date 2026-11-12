@@ -22,6 +22,7 @@ copy_globs=$(grep -v -e '^#' -e '^$' "$DOTFILES/.dotfiles-copy" 2>/dev/null || t
 is_copy() {
   local p
   while IFS= read -r p; do
+    # shellcheck disable=SC2053 # $p is a glob on purpose
     [ -n "$p" ] && [[ $1 == $p ]] && return 0  # unquoted $p = glob; * also matches /
   done <<< "$copy_globs"
   return 1

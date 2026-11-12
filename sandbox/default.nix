@@ -23,7 +23,8 @@ in
 {
   environment.systemPackages = [ sandbox ];
 
-  # smolbento depends on smolvm; its tap is listed so brew can resolve it.
+  # smolvm is a dependency of smolbento, but stays listed: Homebrew 7 only loads formulae from
+  # trusted taps, and brew bundle trusts the formulae its Brewfile names.
   homebrew.taps = [ "smol-machines/tap" "pelotech/tap" ];
-  homebrew.brews = [ "pelotech/tap/smolbento" ];
+  homebrew.brews = [ "smol-machines/tap/smolvm" "pelotech/tap/smolbento" ];
 }
