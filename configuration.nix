@@ -65,7 +65,6 @@ in
     helm-docs
     heroku
     innoextract
-    jdk21
     jq
     just
     k9s
@@ -203,6 +202,7 @@ in
       "slack"
       "sourcegit"
       "stats"
+      "temurin@21"
       "transmission"
       #"unity"
       #"unity-hub"
