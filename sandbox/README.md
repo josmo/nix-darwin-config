@@ -9,7 +9,7 @@ the repo, with filtered network access and no real credentials. Only its commits
 ```sh
 cd <git repo>
 sandbox                 # Claude (default)
-sandbox gemini          # or: opencode, shell, … (sbt run --help lists agents)
+sandbox opencode        # or: codex, copilot, cursor, shell, … (smolbento's built-in agents)
 sandbox claude -- -c    # arguments after -- go to the agent
 ```
 
@@ -60,12 +60,12 @@ come back with their signatures.
 
 ## The nix-tools kit
 
-`nix-tools/nix-tools.yaml` is a smolbento v3 mixin kit (needs smolbento 0.15.2+) that adds to
+`nix-tools/nix-tools.yaml` is a smolbento v3 mixin kit (needs smolbento 0.19.1+) that adds to
 every sandbox `sandbox` creates:
 
 - Nix (pinned, checksummed installer, single-user, flakes on) and direnv, installed on the
   sandbox's first start;
-- `PATH` with the Nix profile first, `OLLAMA_HOST=http://host.docker.internal:11434`,
+- `PATH` with the Nix profile in front of the agent image's own, `OLLAMA_HOST=http://host.docker.internal:11434`,
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
 - network access to the Nix caches.
 

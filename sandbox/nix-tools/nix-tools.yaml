@@ -4,14 +4,14 @@ schemaVersion: "3"
 kind: mixin
 displayName: Nix tools
 description: Nix with flakes, direnv, and host Ollama via host.docker.internal.
-version: "1.0.0"
+version: "1.1.0"
 provides: [nix-tools]
 
 # v3 kits set env vars through args: each default is exported under its `env:` name.
 args:
   PATH:
-    # The agent image's PATH with the Nix profile in front (a kit can't append to it).
-    default: "/home/agent/.nix-profile/bin:/home/agent/.local/bin:/usr/local/share/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    # The Nix profile in front of the agent image's own PATH (`$PATH`; smolbento 0.19.1+).
+    default: "/home/agent/.nix-profile/bin:$PATH"
     env: PATH
   OLLAMA_HOST:
     default: "http://host.docker.internal:11434"
@@ -43,6 +43,8 @@ capabilities:
         - command: |
             set -e
             # Pinned release; the installer is checksummed before it runs (it verifies its own tarball).
+            # To bump: set NIX_VERSION, then NIX_INSTALL_SHA256 from
+            #   curl -fsSL https://releases.nixos.org/nix/nix-$NIX_VERSION/install | sha256sum
             NIX_VERSION=2.33.3
             NIX_INSTALL_SHA256=5562c30835680f229ba3f160c707f3aa63d88fe7d9e6eea84f669c796ac64d26
             curl -fsSL -o /tmp/install-nix "https://releases.nixos.org/nix/nix-$NIX_VERSION/install"

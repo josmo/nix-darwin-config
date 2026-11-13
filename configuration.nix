@@ -17,9 +17,6 @@ in
 {
   nixpkgs.config = {
     allowUnfree = true;
-    problems.handlers = {
-      fabric.broken = "warn";
-    };
   };
   system.primaryUser = user.username;
   nix.enable = false;
@@ -44,6 +41,7 @@ in
     awscli2
     brotli
     cmake
+    delve
     eksctl
     fnm
     fpm
@@ -59,6 +57,7 @@ in
     go
     golangci-lint
     (google-cloud-sdk.withExtraComponents [ google-cloud-sdk.components.gke-gcloud-auth-plugin ])
+    gopls
     gradle
     gron
     hcledit
@@ -66,14 +65,17 @@ in
     helm-docs
     heroku
     innoextract
+    jdk21
     jq
     just
+    k9s
     kind
     krew
     kubeconform
     kubebuilder
     kubernetes-helm
     kubevirt
+    kubie
     kustomize
     kustomize-sops
     mas
@@ -82,6 +84,7 @@ in
     openconnect
     opensc
     oras
+    packer
     pnpm
     prek
     poppler-utils
@@ -95,10 +98,12 @@ in
     renovate
     rpm
     ruby
+    rustup
     shellcheck
     shfmt
     sops
     sshuttle
+    stern
     telepresence2
     tenv
     terraform-docs
@@ -215,7 +220,6 @@ in
       "Numbers" = 409203825;
       "Pages" = 409201541;
       "PDFgear" = 6469021132;
-      "Pocket" = 568494494;
       "ScreenFlow" = 1107828211;
       "Tailscale" = 1475387142;
       "Trello" = 1278508951;
