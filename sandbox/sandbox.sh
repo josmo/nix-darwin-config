@@ -4,7 +4,7 @@
 [ $# -gt 0 ] || set -- claude
 
 # Stage personal agent config for the agent-config kit, fresh on every launch. Sandboxes see it
-# live through a host mount and can write to it, so it's a copy, never the dotfiles themselves.
+# live, read-only, at the same path.
 stage=${XDG_DATA_HOME:-$HOME/.local/share}/sandbox/agent-config
 # Emptied, not recreated: running sandboxes have this directory mounted.
 mkdir -p "$stage" && find "$stage" -mindepth 1 -delete
@@ -29,15 +29,17 @@ for f in "$stage"/opencode/agents/*.md; do
   awk '/^---$/ { n++ } !(n == 1 && /^(tools|model|color):/)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 done
 
-# Kits, the clone and the mount only apply on create (sbt warns about them after), so an
+# Kits, the clone and mounts only apply on create (sbt warns about them after), so an
 # existing sandbox just runs. sbt's name: <agent, or a kit's last path part>-<workspace basename>.
 name=$(basename "${1%%[:@]*}")-$(basename "$PWD")
 if sbt inspect "$name" >/dev/null 2>&1; then exec sbt run "$@"; fi
 
 # user.signingkey is the public key itself ("ssh-rsa AAAA..."); empty: no signing.
 key=$(git config user.signingkey || true)
+agent=$1; shift
+# Workspaces: this repo (cloned), then the staging directory, read-only.
 exec sbt run --clone \
   --kit "$SANDBOX_KITS/nix-tools" \
   --kit "$SANDBOX_KITS/git-signing" --kit-arg "git-signing.signingKey=${key#key::}" \
-  --kit "$SANDBOX_KITS/agent-config" --mount "$stage:/opt/agent-config" \
-  "$@"
+  --kit "$SANDBOX_KITS/agent-config" --kit-arg "agent-config.AGENT_CONFIG=$stage" \
+  "$agent" . "$stage:ro" "$@"

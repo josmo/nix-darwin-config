@@ -36,11 +36,12 @@ from your last commit; uncommitted changes aren't copied in.
 ## Setup (once)
 
 1. `nh darwin switch`: installs smolbento (with smolvm) and the `sandbox` command.
-2. Network policy, and host access for Ollama (opens **every** port on the host's localhost
-   to sandboxes created afterwards):
+2. Network policy, host access for Ollama (opens **every** port on the host's localhost
+   to sandboxes created afterwards), and OpenCode's own models (its default, `big-pickle`):
    ```sh
    sbt policy init balanced
    sbt policy allow network localhost
+   sbt policy allow network 'opencode.ai,*.opencode.ai'
    ```
 3. In 1Password: an item `claude-sandbox` in vault `Private` whose `credential` field holds
    `claude setup-token`'s output, and the SSH agent turned on with your signing key in it.
@@ -86,14 +87,16 @@ Your personal agent instructions, subagents and commands, for every agent. On ea
 - `claude/` and `opencode/`: each agent's `agents` and `commands`, as APM installed them.
   OpenCode's lose `tools:`, `model:` and `color:`, which the sandbox's older OpenCode rejects.
 
-`agent-config/agent-config.yaml` mounts that directory at `/opt/agent-config` and, on every
-start, links each agent's files to it: `~/.claude/CLAUDE.md`, `~/.config/opencode/AGENTS.md`,
-`~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md` (Antigravity) and
+`sandbox` mounts that directory read-only, at the same path, as a second workspace
+(`sbt run … . <dir>:ro`). smolvm enforces it on the host side, so not even root in the VM
+can write to it. `agent-config/agent-config.yaml` gets the path as a kit argument and, on
+every start, links each agent's files to it: `~/.claude/CLAUDE.md`,
+`~/.config/opencode/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md` (Antigravity) and
 `~/.copilot/copilot-instructions.md`, plus the Claude and OpenCode subagents and commands.
 Being a mount, it updates running sandboxes too, on the next `sandbox` run from anywhere.
 
-The mount is writable, and every sandbox shares it, so it holds a copy, never the dotfiles:
-a sandbox can change what other sandboxes read until the next launch, but not your host agents.
+It's a copy rather than the dotfiles themselves because the instructions come from several
+places, and need joining and a few format fixes.
 
 Skills come from `sbt skills import`, which collects the host's skills into smolbento's store
 and shares them with every sandbox. Re-run it after APM updates; sandboxes pick new skills up

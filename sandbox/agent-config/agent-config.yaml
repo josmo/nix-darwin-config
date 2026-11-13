@@ -3,21 +3,25 @@
 schemaVersion: "3"
 kind: mixin
 displayName: Agent config
-description: Links each agent's instructions, subagents and commands to a host directory.
-version: "1.0.0"
+description: Links each agent's instructions, subagents and commands to a read-only host directory.
+version: "2.0.0"
 provides: [agent-config]
 
-capabilities:
-  # The `sandbox` command binds its staging directory here (--mount), refreshed on each launch.
-  - type: com.docker.sandbox/host-mount@1
-    config: {path: /opt/agent-config}
+args:
+  # The `sandbox` command's staging directory, which it also mounts read-only (`DIR:ro`) at the
+  # same path. Empty: nothing is linked.
+  AGENT_CONFIG:
+    default: ""
+    env: AGENT_CONFIG
 
+capabilities:
   - type: com.docker.sandbox/lifecycle@1
     config:
       startup:
         - command: |
             set -e
-            c=/opt/agent-config h=/home/agent
+            c=$AGENT_CONFIG h=/home/agent
+            [ -n "$c" ] || exit 0
             # link TARGET PATH: point PATH at TARGET, replacing whatever is there.
             link() {
               [ -e "$1" ] || return 0
