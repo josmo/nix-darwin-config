@@ -10,10 +10,12 @@ the repo, with filtered network access and no real credentials. Only its commits
 cd <git repo>
 sandbox                 # Claude (default)
 sandbox opencode        # or: codex, copilot, cursor, shell, … (smolbento's built-in agents)
+sandbox docker.io/sbx/antigravity:latest   # an agent from a workload kit
 sandbox claude -- -c    # arguments after -- go to the agent
 ```
 
-`sandbox` is `sbt run --clone` with the two kits below. Everything else is plain `sbt`:
+`sandbox` is `sbt run --clone` with the three kits below, after staging your
+[agent instructions](#the-agent-config-kit). Everything else is plain `sbt`:
 
 ```sh
 sbt ls                         # sandboxes
@@ -73,6 +75,29 @@ Docker inside the sandbox comes from smolbento's built-in `docker` kit.
 
 Kit changes, policy host access and new secret services apply to **new** sandboxes:
 `sbt rm <name>`, then `sandbox` again. Check a kit edit with `sbt kit validate ./nix-tools`.
+
+## The agent-config kit
+
+Your personal agent instructions, subagents and commands, for every agent. On each launch
+`sandbox` rebuilds `~/.local/share/sandbox/agent-config/` from your dotfiles:
+
+- `AGENTS.md`: `~/.config/agents/core.md`, `sandbox.md` and `~/.claude/CLAUDE.private.md` (if
+  present) in one file, frontmatter removed. `host.md` stays on the host.
+- `claude/` and `opencode/`: each agent's `agents` and `commands`, as APM installed them.
+  OpenCode's lose `tools:`, `model:` and `color:`, which the sandbox's older OpenCode rejects.
+
+`agent-config/agent-config.yaml` mounts that directory at `/opt/agent-config` and, on every
+start, links each agent's files to it: `~/.claude/CLAUDE.md`, `~/.config/opencode/AGENTS.md`,
+`~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md` (Antigravity) and
+`~/.copilot/copilot-instructions.md`, plus the Claude and OpenCode subagents and commands.
+Being a mount, it updates running sandboxes too, on the next `sandbox` run from anywhere.
+
+The mount is writable, and every sandbox shares it, so it holds a copy, never the dotfiles:
+a sandbox can change what other sandboxes read until the next launch, but not your host agents.
+
+Skills come from `sbt skills import`, which collects the host's skills into smolbento's store
+and shares them with every sandbox. Re-run it after APM updates; sandboxes pick new skills up
+on their next start. Hooks and MCP servers aren't available in sandboxes.
 
 ## How it stays safe
 

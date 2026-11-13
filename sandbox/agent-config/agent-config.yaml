@@ -1,0 +1,40 @@
+# syntax=docker/sandbox-kit:3
+# Personal agent instructions, subagents and commands for every agent; see ../README.md.
+schemaVersion: "3"
+kind: mixin
+displayName: Agent config
+description: Links each agent's instructions, subagents and commands to a host directory.
+version: "1.0.0"
+provides: [agent-config]
+
+capabilities:
+  # The `sandbox` command binds its staging directory here (--mount), refreshed on each launch.
+  - type: com.docker.sandbox/host-mount@1
+    config: {path: /opt/agent-config}
+
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      startup:
+        - command: |
+            set -e
+            c=/opt/agent-config h=/home/agent
+            # link TARGET PATH: point PATH at TARGET, replacing whatever is there.
+            link() {
+              [ -e "$1" ] || return 0
+              mkdir -p "$(dirname "$2")"
+              [ -L "$2" ] || rm -rf "$2"
+              ln -sfn "$1" "$2"
+            }
+            link $c/AGENTS.md $h/.claude/CLAUDE.md
+            link $c/AGENTS.md $h/.config/opencode/AGENTS.md
+            link $c/AGENTS.md $h/.codex/AGENTS.md
+            link $c/AGENTS.md $h/.gemini/GEMINI.md
+            link $c/AGENTS.md $h/.copilot/copilot-instructions.md
+            for a in claude opencode; do
+              d=$h/.$a; [ $a = opencode ] && d=$h/.config/opencode
+              link $c/$a/agents $d/agents
+              link $c/$a/commands $d/commands
+            done
+          # Startup steps run as root unless they name a user (smolbento 0.20.1).
+          user: agent
+          description: Link agent instructions, subagents and commands

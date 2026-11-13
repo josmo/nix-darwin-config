@@ -4,7 +4,7 @@ schemaVersion: "3"
 kind: mixin
 displayName: Nix tools
 description: Nix with flakes, direnv, and host Ollama via host.docker.internal.
-version: "1.1.0"
+version: "1.1.1"
 provides: [nix-tools]
 
 # v3 kits set env vars through args: each default is exported under its `env:` name.
@@ -35,11 +35,11 @@ capabilities:
         - command: |
             set -e
             apt-get update
-            apt-get install -y --no-install-recommends direnv
+            apt-get install -y --no-install-recommends direnv xz-utils
             mkdir -p -m 0755 /nix
             chown agent /nix
           user: "0"
-          description: Install direnv and create /nix for a single-user install
+          description: Install direnv (and xz, for the Nix installer) and create /nix for a single-user install
         - command: |
             set -e
             # Pinned release; the installer is checksummed before it runs (it verifies its own tarball).

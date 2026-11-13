@@ -9,15 +9,8 @@ let
   # sbt (Homebrew, below) and git come from PATH.
   sandbox = pkgs.writeShellApplication {
     name = "sandbox";
-    text = ''
-      [ $# -gt 0 ] || set -- claude
-      # user.signingkey is the public key itself ("ssh-rsa AAAA..."); empty: no signing.
-      key=$(git config user.signingkey || true)
-      exec sbt run --clone \
-        --kit ${kits}/nix-tools \
-        --kit ${kits}/git-signing --kit-arg "git-signing.signingKey=''${key#key::}" \
-        "$@"
-    '';
+    runtimeEnv.SANDBOX_KITS = kits;
+    text = builtins.readFile ./sandbox.sh;
   };
 in
 {
