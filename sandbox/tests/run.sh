@@ -46,9 +46,9 @@ test_kits_beside_script() {
   for k in nix-tools git-signing agent-config; do assert_line "$STUB_LOG" "$root/$k"; done
 }
 
-test_kits_from_env() {
+test_ignores_sandbox_kits_env() {
   SANDBOX_KITS=/x run_sandbox claude || fail "exit $?: $(cat "$t/err")"
-  assert_line "$STUB_LOG" /x/nix-tools
+  assert_line "$STUB_LOG" "$root/nix-tools"
 }
 
 test_via_symlink() {
@@ -103,6 +103,18 @@ test_claude_only_agents() {
   run_sandbox claude || fail "exit $?: $(cat "$t/err")"
   [ -e "$stage/claude/agents/x.md" ] || fail "claude agent not staged"
   [ ! -e "$stage/opencode" ] || fail "opencode staged without a source"
+}
+
+test_opencode_agents_and_commands() {
+  o=$HOME/.config/opencode
+  mkdir -p "$o/agents" "$o/commands" "$HOME/.claude/commands"
+  printf -- '---\nname: x\ntools: Read, Write\nmodel: sonnet\ncolor: pink\n---\nmodel: stays in the body\n' > "$o/agents/x.md"
+  echo c > "$o/commands/c.md"
+  echo k > "$HOME/.claude/commands/k.md"
+  run_sandbox claude || fail "exit $?: $(cat "$t/err")"
+  assert_eq "$(cat "$stage/opencode/agents/x.md")" "$(printf -- '---\nname: x\n---\nmodel: stays in the body')"
+  [ -e "$stage/opencode/commands/c.md" ] || fail "opencode command not staged"
+  [ -e "$stage/claude/commands/k.md" ] || fail "claude command not staged"
 }
 
 test_shipped_notes_generic() {

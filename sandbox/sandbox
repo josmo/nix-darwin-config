@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # `sandbox [agent] [-- agent args]`: run a coding agent in a smolbento sandbox; see README.md.
-# Runs as is (kits are the folders beside this script, found through symlinks), or wrapped by
-# default.nix, which sets SANDBOX_KITS to this folder in the Nix store. sbt and git come from PATH.
+# Kits are the folders beside this script, found through symlinks (a link on PATH, or Nix's link
+# into the store). sbt and git come from PATH.
 set -euo pipefail
-kits=${SANDBOX_KITS:-$(dirname "$(realpath "$0")")}
+kits=$(dirname "$(realpath "$0")")
 [ $# -gt 0 ] || set -- claude
 
 # Stage personal agent config for the agent-config kit, fresh on every launch. Sandboxes see it
@@ -19,13 +19,13 @@ for f in "$kits/sandbox.md" "$instructions"/*.md; do
   [ -e "$f" ] || continue
   awk 'NR == 1 && /^---$/ { fm = 1; next } fm { if (/^---$/) fm = 0; next } 1; END { print "" }' "$f"
 done > "$stage/AGENTS.md"
-# Subagents and commands, in each agent's own format (APM writes both).
-for src in ~/.claude ~/.config/opencode; do
-  a=$(basename "$src"); a=${a#.}
-  for d in agents commands; do
-    if [ -d "$src/$d" ]; then mkdir -p "$stage/$a" && cp -RL "$src/$d" "$stage/$a/"; fi
-  done
-done
+# Subagents and commands, in each agent's own format (APM writes both), where they exist.
+# stage_dir DIR AGENT: copy DIR (following symlinks) to $stage/AGENT/.
+stage_dir() { if [ -d "$1" ]; then mkdir -p "$stage/$2" && cp -RL "$1" "$stage/$2/"; fi; }
+stage_dir ~/.claude/agents claude
+stage_dir ~/.claude/commands claude
+stage_dir ~/.config/opencode/agents opencode
+stage_dir ~/.config/opencode/commands opencode
 # APM gives OpenCode the Claude frontmatter. The sandbox's older OpenCode rejects its `tools:` (a
 # list, not a map), `model:` (`sonnet`, not provider/model) and named `color:`s. Without them a
 # subagent gets every tool and the session's model.

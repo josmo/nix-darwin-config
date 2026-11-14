@@ -2,16 +2,12 @@
 # Usage: `sandbox [agent] [-- agent args]`; see README.md.
 { pkgs, ... }:
 let
-  # This directory in the store; its kit directories keep their names, which smolbento uses as
-  # the kit names.
-  kits = ./.;
-
-  # sbt (Homebrew, below) and git come from PATH.
-  sandbox = pkgs.writeShellApplication {
-    name = "sandbox";
-    runtimeEnv.SANDBOX_KITS = kits;
-    text = builtins.readFile ./sandbox;
-  };
+  # A link to the script in this directory's store copy, so it finds its kits beside it, as it
+  # does from a clone. Kit directories keep their names, which smolbento uses as the kit names.
+  sandbox = pkgs.runCommand "sandbox" { } ''
+    mkdir -p $out/bin
+    ln -s ${./.}/sandbox $out/bin/sandbox
+  '';
 in
 {
   environment.systemPackages = [ sandbox ];
