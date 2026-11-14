@@ -12,12 +12,13 @@ This folder stands alone: the `sandbox` script, its kits and its notes. Nix is o
 cd <git repo>
 sandbox                 # Claude (default)
 sandbox opencode        # or: codex, copilot, cursor, shell, … (smolbento's built-in agents)
-sandbox docker.io/sbx/antigravity:latest   # an agent from a workload kit
-sandbox claude -- -c    # arguments after -- go to the agent
+sandbox antigravity     # an agent from a workload kit (agents/antigravity.yaml)
+sandbox claude -- -c    # arguments after the agent go to it (the -- is optional)
+sandbox --env-arg region=eu opencode   # args for the env files come first
 ```
 
-`sandbox` is `sbt run --clone` with the three kits below, after staging
-[your instructions](#your-instructions). Everything else is plain `sbt`:
+`sandbox` stages [your instructions](#your-instructions), then runs `sbt env run` with
+[env files](#env-files). Everything else is plain `sbt`:
 
 ```sh
 sbt ls                         # sandboxes
@@ -35,9 +36,49 @@ git merge sandbox-claude-<repo>/main
 Each repo + agent gets one sandbox, created on first use and reused after. The clone starts
 from your last commit; uncommitted changes aren't copied in.
 
+The first run asks `Approve this plan?` (it needs a terminal), and so does a run after any env
+file or its inputs change, such as a new signing key. Changes to kits, workspaces or ports only
+reach new sandboxes: `sbt rm <name>`, then `sandbox` again.
+
+Sandboxes made by `sandbox` before it used env files aren't found by `sbt env run` ("not found
+for this environment"): merge their commits, `sbt rm` them, and run `sandbox` again.
+
+## Env files
+
+`sandbox` passes these [sbxenv.yaml](https://github.com/pelotech/smolbento/blob/main/docs/usage.md#environments-sbxenvyaml)
+files to `sbt env run`, the ones that exist, in this order (later wins: maps merge, lists add up):
+
+1. [`sbxenv.yaml`](sbxenv.yaml): the clone, your staged instructions (read-only), the kits and
+   a few variables.
+2. `agents/<agent>.yaml`: for agents that come from a kit, such as
+   [Antigravity](agents/antigravity.yaml).
+3. `~/.config/sandbox/agents/<agent>.yaml`: your own kit-based agents.
+4. `~/.config/sandbox/sbxenv.yaml`: your own additions for every sandbox (kits, `env`, memory).
+5. `./sbxenv.yaml`: the project's, from the directory you run `sandbox` in. Run it from the
+   repo's root: from a subdirectory, that subdirectory is the workspace and the place it looks.
+
+(`~/.config` is `$XDG_CONFIG_HOME` if set.) Preview what a run would do with `sbt env plan`
+and the same files.
+
+`sandbox` passes the args `agent`, `workspace` (the current directory), `stage` and
+`signingKey`; your files can use them as `${{ env.args.NAME }}`. Pass others, such as a project
+file's required ones, with `--env-arg NAME=VALUE` before the agent. `${{ env.projectDir }}` and
+`SBX_ENV_DIR` name the first file's directory, which here is this folder, not your repo: use
+`${{ env.args.workspace }}` for the repo.
+
+A project's `sbxenv.yaml` works on its own too: teammates without `sandbox` can use it with
+plain `sbt env run` (or Docker's `sbx env run`). Being last, its `agent:` and `name:` win over
+the agent you ask `sandbox` for: in a file meant to work both ways, write
+`agent: ${{ env.args.agent }}` with `args: {agent: {default: claude}}`, and leave `name:` out.
+
+A project file can also run commands on your Mac, mount your directories, add kits, change the
+agent, or turn off the clone (or point the workspace elsewhere) so the agent writes straight to
+your checkout. All of it shows in the approval plan before anything runs, so read it before you
+approve a file you didn't write.
+
 ## Install
 
-On a Mac with Homebrew:
+On a Mac with Homebrew (smolbento 0.26 or newer):
 
 ```sh
 brew install smol-machines/tap/smolvm pelotech/tap/smolbento
@@ -118,17 +159,16 @@ workload kits, such as Antigravity, get none otherwise. There the agent signs co
 refuses SSH logins. Built-in agents (Claude, OpenCode, …) always get it with no limits, which a
 kit can't narrow: they can also log in over SSH as you (`git push` to an SSH remote).
 
-### nix-tools
+### Nix
 
-`nix-tools/nix-tools.yaml` adds to every sandbox:
+smolbento's [`nix` kit](https://github.com/pelotech/smolbento/tree/main/kits/nix), pinned in
+`sbxenv.yaml`: Nix with flakes, direnv with nix-direnv, and xz, in the kit's image layer, so
+nothing is downloaded at create. It brings its own network rules for the Nix caches. Agents run
+project commands with `direnv exec . <cmd>` or `nix develop -c <cmd>`, which the kit tells them.
 
-- Nix (pinned, checksummed installer, single-user, flakes on), direnv and xz, installed on the
-  sandbox's first start;
-- `PATH` with the Nix profile in front of the agent image's own, `OLLAMA_HOST=http://host.docker.internal:11434`,
-  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
-- network access to the Nix caches.
-
-Docker inside the sandbox comes from smolbento's built-in `docker` kit.
+`sbxenv.yaml` also sets `OLLAMA_HOST=http://host.docker.internal:11434` and
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Docker inside the sandbox comes from smolbento's
+built-in `docker` kit.
 
 ### agent-config
 
@@ -140,7 +180,7 @@ On each launch `sandbox` rebuilds `~/.local/share/sandbox/agent-config/`:
   format from APM).
 
 `sandbox` mounts that folder read-only, at the same path, as a second workspace
-(`sbt run … . <dir>:ro`). smolvm enforces it on the host side, so not even root in the VM can
+(`additionalWorkspaces` with `readOnly: true` in `sbxenv.yaml`). smolvm enforces it on the host side, so not even root in the VM can
 write to it. `agent-config/agent-config.yaml` gets the path as a kit argument and, on every
 start, links each agent's files to it: `~/.claude/CLAUDE.md`, `~/.config/opencode/AGENTS.md`,
 `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md` (Antigravity) and

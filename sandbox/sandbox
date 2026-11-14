@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
-# `sandbox [agent] [-- agent args]`: run a coding agent in a smolbento sandbox; see README.md.
-# Kits are the folders beside this script, found through symlinks (a link on PATH, or Nix's link
-# into the store). sbt and git come from PATH.
+# `sandbox [--env-arg NAME=VALUE]… [agent] [[--] agent args]`: run a coding agent in a smolbento
+# sandbox; see README.md.
+# Stages your agent config and finds your signing key, then runs `sbt env run` with the env files:
+# sbxenv.yaml beside this script (found through symlinks: a link on PATH, or Nix's link into the
+# store), then your own layers where they exist. sbt and git come from PATH.
 set -euo pipefail
 kits=$(dirname "$(realpath "$0")")
-[ $# -gt 0 ] || set -- claude
+# Extra args for the env files (such as a project file's own), before the agent.
+extra=()
+while [ "${1:-}" = --env-arg ]; do
+  [[ ${2:-} == *=* ]] || { echo "sandbox: --env-arg needs NAME=VALUE" >&2; exit 2; }
+  extra+=(--env-arg "$2"); shift 2
+done
+# No agent (nothing, or straight to `--`): Claude.
+if [ $# -eq 0 ] || [ "$1" = -- ]; then set -- claude "$@"; fi
+agent=$1; shift
+[ "${1:-}" != -- ] || shift
+# The name picks env files below and names the sandbox: a plain word, no paths.
+[[ $agent =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "sandbox: '$agent' isn't an agent name" >&2; exit 2; }
 
 # Stage personal agent config for the agent-config kit, fresh on every launch. Sandboxes see it
 # live, read-only, at the same path.
@@ -34,11 +47,6 @@ for f in "$stage"/opencode/agents/*.md; do
   awk '/^---$/ { n++ } !(n == 1 && /^(tools|model|color):/)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 done
 
-# Kits, the clone and mounts only apply on create (sbt warns about them after), so an
-# existing sandbox just runs. sbt's name: <agent, or a kit's last path part>-<workspace basename>.
-name=$(basename "${1%%[:@]*}")-$(basename "$PWD")
-if sbt inspect "$name" >/dev/null 2>&1; then exec sbt run "$@"; fi
-
 # The SSH public key to sign sandbox commits with, or nothing. user.signingkey may be the key
 # itself ("ssh-ed25519 AAAA...", optionally "key::"-prefixed) or a file holding it; anything
 # else (a GPG key ID, no gpg.format=ssh) would make every commit in the sandbox fail to sign.
@@ -61,10 +69,12 @@ signing_key() {
   fi
 }
 key=$(signing_key)
-agent=$1; shift
-# Workspaces: this repo (cloned), then the staging directory, read-only.
-exec sbt run --clone \
-  --kit "$kits/nix-tools" \
-  --kit "$kits/git-signing" --kit-arg "git-signing.signingKey=$key" \
-  --kit "$kits/agent-config" --kit-arg "agent-config.AGENT_CONFIG=$stage" \
-  "$agent" . "$stage:ro" "$@"
+# Env files, later wins: shared, the agent's (kit-based agents), yours, then the project's.
+config=${XDG_CONFIG_HOME:-$HOME/.config}/sandbox
+files=("$kits/sbxenv.yaml")
+for f in "$kits/agents/$agent.yaml" "$config/agents/$agent.yaml" "$config/sbxenv.yaml" "$PWD/sbxenv.yaml"; do
+  if [ -e "$f" ]; then files+=("$f"); fi
+done
+args=(--env-arg "agent=$agent" --env-arg "workspace=$PWD" --env-arg "stage=$stage" --env-arg "signingKey=$key" ${extra[@]+"${extra[@]}"})
+if [ $# -gt 0 ]; then exec sbt env run "${files[@]}" "${args[@]}" -- "$@"; fi
+exec sbt env run "${files[@]}" "${args[@]}"

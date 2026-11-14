@@ -1,0 +1,4 @@
+# `sandbox antigravity`: Antigravity comes from a workload kit, listed only for this agent.
+schemaVersion: "1"
+kits:
+  - docker.io/sbx/antigravity:latest
