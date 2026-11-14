@@ -4,7 +4,7 @@ schemaVersion: "3"
 kind: mixin
 displayName: Agent config
 description: Links each agent's instructions, subagents and commands to a read-only host directory.
-version: "2.0.0"
+version: "2.1.0"
 provides: [agent-config]
 
 args:
@@ -15,6 +15,12 @@ args:
     env: AGENT_CONFIG
 
 capabilities:
+  # OpenCode's own models (its default, big-pickle), which the balanced policy doesn't allow.
+  - type: com.docker.sandbox/network-policy@2
+    config:
+      runtime:
+        allow: [{hosts: [opencode.ai, "*.opencode.ai"]}]
+
   - type: com.docker.sandbox/lifecycle@1
     config:
       startup:

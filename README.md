@@ -12,7 +12,7 @@ and a sandbox for coding agents.
 | `flake.nix` | Inputs (nixpkgs, nix-darwin) and outputs: the system config, `nix fmt`, and a shellcheck `nix flake check`. |
 | `configuration.nix` | The system: nix packages, Homebrew taps/brews/casks, App Store apps, zsh, direnv, Touch ID sudo. |
 | `link-dotfiles.sh` | Run on every switch. Clones the dotfiles repo if missing, then links its dotfiles into `$HOME`. |
-| `sandbox/` | `sandbox` command: run Claude/Gemini/OpenCode in a microVM with [smolbento](https://github.com/pelotech/smolbento). Optional, see [sandbox/README.md](sandbox/README.md). |
+| `sandbox/` | `sandbox` command: run Claude/OpenCode/Antigravity in a microVM with [smolbento](https://github.com/pelotech/smolbento). Self-contained (usable without Nix) and optional, see [sandbox/README.md](sandbox/README.md). |
 | `tools/` | Odds and ends not wired into the system (e.g. a Google Apps Script). |
 
 ## Dotfiles

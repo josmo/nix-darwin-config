@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# `sandbox [agent] [-- agent args]`: run a coding agent in a smolbento sandbox; see README.md.
+# Runs as is (kits are the folders beside this script, found through symlinks), or wrapped by
+# default.nix, which sets SANDBOX_KITS to this folder in the Nix store. sbt and git come from PATH.
+set -euo pipefail
+kits=${SANDBOX_KITS:-$(dirname "$(realpath "$0")")}
+[ $# -gt 0 ] || set -- claude
+
+# Stage personal agent config for the agent-config kit, fresh on every launch. Sandboxes see it
+# live, read-only, at the same path.
+stage=${XDG_DATA_HOME:-$HOME/.local/share}/sandbox/agent-config
+# Emptied, not recreated: running sandboxes have this directory mounted.
+mkdir -p "$stage" && find "$stage" -mindepth 1 -delete
+# One instructions file for every agent: the shipped sandbox notes, then your own *.md files from
+# the instructions folder (optional) in name order, each without its leading frontmatter (such
+# as Antigravity's `trigger:`) and followed by a blank line.
+instructions=${XDG_CONFIG_HOME:-$HOME/.config}/sandbox/instructions
+for f in "$kits/sandbox.md" "$instructions"/*.md; do
+  [ -e "$f" ] || continue
+  awk 'NR == 1 && /^---$/ { fm = 1; next } fm { if (/^---$/) fm = 0; next } 1; END { print "" }' "$f"
+done > "$stage/AGENTS.md"
+# Subagents and commands, in each agent's own format (APM writes both).
+for src in ~/.claude ~/.config/opencode; do
+  a=$(basename "$src"); a=${a#.}
+  for d in agents commands; do
+    if [ -d "$src/$d" ]; then mkdir -p "$stage/$a" && cp -RL "$src/$d" "$stage/$a/"; fi
+  done
+done
+# APM gives OpenCode the Claude frontmatter. The sandbox's older OpenCode rejects its `tools:` (a
+# list, not a map), `model:` (`sonnet`, not provider/model) and named `color:`s. Without them a
+# subagent gets every tool and the session's model.
+for f in "$stage"/opencode/agents/*.md; do
+  [ -e "$f" ] || continue
+  awk '/^---$/ { n++ } !(n == 1 && /^(tools|model|color):/)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+done
+
+# Kits, the clone and mounts only apply on create (sbt warns about them after), so an
+# existing sandbox just runs. sbt's name: <agent, or a kit's last path part>-<workspace basename>.
+name=$(basename "${1%%[:@]*}")-$(basename "$PWD")
+if sbt inspect "$name" >/dev/null 2>&1; then exec sbt run "$@"; fi
+
+# The SSH public key to sign sandbox commits with, or nothing. user.signingkey may be the key
+# itself ("ssh-ed25519 AAAA...", optionally "key::"-prefixed) or a file holding it; anything
+# else (a GPG key ID, no gpg.format=ssh) would make every commit in the sandbox fail to sign.
+signing_key() {
+  local key fmt type body pattern='^[A-Za-z0-9@.+/= -]*$'  # the git-signing kit's own pattern
+  key=$(git config user.signingkey || true)
+  [ -n "$key" ] || return 0
+  fmt=$(git config gpg.format || true)
+  key=${key#key::}
+  # shellcheck disable=SC2088 # git config stores a literal ~
+  case $key in "~/"*) key=$HOME/${key#"~/"} ;; esac
+  if [ -f "$key" ] && [ -r "$key" ]; then key=$(head -n 1 "$key"); fi
+  # Type and key only: the comment ("me@host") isn't needed, and may not pass the kit's pattern.
+  read -r type body _ <<< "$key" || true
+  key="$type ${body:-}"
+  if [ "$fmt" = ssh ] && [[ $key =~ ^(ssh-|ecdsa-|sk-) && $key =~ $pattern ]]; then
+    printf '%s\n' "$key"
+  else
+    echo "sandbox: user.signingkey isn't an SSH public key; sandbox commits won't be signed" >&2
+  fi
+}
+key=$(signing_key)
+agent=$1; shift
+# Workspaces: this repo (cloned), then the staging directory, read-only.
+exec sbt run --clone \
+  --kit "$kits/nix-tools" \
+  --kit "$kits/git-signing" --kit-arg "git-signing.signingKey=$key" \
+  --kit "$kits/agent-config" --kit-arg "agent-config.AGENT_CONFIG=$stage" \
+  "$agent" . "$stage:ro" "$@"

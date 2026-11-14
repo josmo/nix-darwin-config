@@ -1,8 +1,10 @@
 # sandbox
 
-Run a coding agent (Claude, Gemini, OpenCode, …) in a microVM with
+Run a coding agent (Claude, OpenCode, Codex, Antigravity, …) in a microVM with
 [smolbento](https://github.com/pelotech/smolbento) (`sbt`). The agent works on its own clone of
 the repo, with filtered network access and no real credentials. Only its commits come back.
+
+This folder stands alone: the `sandbox` script, its kits and its notes. Nix is optional.
 
 ## Usage
 
@@ -14,8 +16,8 @@ sandbox docker.io/sbx/antigravity:latest   # an agent from a workload kit
 sandbox claude -- -c    # arguments after -- go to the agent
 ```
 
-`sandbox` is `sbt run --clone` with the three kits below, after staging your
-[agent instructions](#the-agent-config-kit). Everything else is plain `sbt`:
+`sandbox` is `sbt run --clone` with the three kits below, after staging
+[your instructions](#your-instructions). Everything else is plain `sbt`:
 
 ```sh
 sbt ls                         # sandboxes
@@ -33,40 +35,89 @@ git merge sandbox-claude-<repo>/main
 Each repo + agent gets one sandbox, created on first use and reused after. The clone starts
 from your last commit; uncommitted changes aren't copied in.
 
-## Setup (once)
+## Install
 
-1. `nh darwin switch`: installs smolbento (with smolvm) and the `sandbox` command.
-2. Network policy, host access for Ollama (opens **every** port on the host's localhost
-   to sandboxes created afterwards), and OpenCode's own models (its default, `big-pickle`):
-   ```sh
-   sbt policy init balanced
-   sbt policy allow network localhost
-   sbt policy allow network 'opencode.ai,*.opencode.ai'
-   ```
-3. In 1Password: an item `claude-sandbox` in vault `Private` whose `credential` field holds
-   `claude setup-token`'s output, and the SSH agent turned on with your signing key in it.
-   Set `user.signingkey` in your git config to the public key (`ssh-rsa AAAA...`).
+On a Mac with Homebrew:
 
-smolbento's settings (the 1Password SSH agent socket) and secret references
-(`claude` → `op://Private/claude-sandbox/credential`) live in the dotfiles repo as
-`.config/smolbento/config.toml` and `secrets.toml`, linked into `~/.config/smolbento/`.
-`sbt settings set` and `sbt secret set` write through the links: commit the change in dotfiles.
-`policy.toml` stays local (smolbento keeps per-sandbox rules there).
+```sh
+brew install smol-machines/tap/smolvm pelotech/tap/smolbento
+git clone https://github.com/josmo/nix-darwin-config.git
+mkdir -p ~/.local/bin
+ln -s "$PWD/nix-darwin-config/sandbox/sandbox" ~/.local/bin/sandbox   # or any dir on your PATH
+```
 
-## The git-signing kit
+If `~/.local/bin` isn't on your `PATH` yet, add `export PATH="$HOME/.local/bin:$PATH"` to
+`~/.zshrc`.
+
+`sandbox` finds its kits next to itself (through the link), so `git pull` updates everything.
+With nix-darwin, the `./sandbox` module installs it all instead.
+
+Then, once:
+
+1. `sbt policy init balanced`: deny-by-default network with a common allow list.
+2. `claude setup-token`, then `sbt secret set claude` and paste the token (or use `--ref` for
+   a 1Password reference). The VM only ever sees a placeholder.
+3. To sign sandbox commits: `gpg.format ssh` and `user.signingkey` set to your SSH public key
+   (the key itself, or a path to the `.pub` file), with that key in your SSH agent. smolbento
+   forwards the agent while you're attached. Without it, commits are made unsigned, with a note.
+
+## Your instructions
+
+Every agent in a sandbox gets one instructions file, rebuilt on each `sandbox` launch:
+
+1. [`sandbox.md`](sandbox.md), always: where it's running and the house rules (commit, never
+   push).
+2. Then each `*.md` in `~/.config/sandbox/instructions/` (`$XDG_CONFIG_HOME` if set), in name
+   order, symlinks followed. Prefixes like `10-` and `90-` set the order. Leading frontmatter is
+   removed. The folder is optional: without it, agents get only `sandbox.md`.
+
+Subagents and commands come along too, from `~/.claude/{agents,commands}` and
+`~/.config/opencode/{agents,commands}` when they exist.
+
+Keep anything for the host only (MCP servers, host tools) out of the folder.
+
+## Ollama on the host
+
+```sh
+sbt policy allow network localhost
+```
+
+Lets sandboxes created afterwards reach `host.docker.internal`. It opens **every** port on
+your Mac's localhost (smolvm can't open just one yet), and kits can't grant it.
+
+## How I set mine up
+
+As an example, not a requirement ([dotfiles](https://github.com/josmo/dotfiles)):
+
+- Instructions: `10-core.md` (a symlink to my shared `core.md`), `20-host.md` (my host tools
+  that aren't in the VM), and `90-private.md`, a hand-made link to a private file that never
+  goes in git.
+- The Claude token lives in 1Password (item `claude-sandbox`, vault `Private`), referenced as
+  `op://Private/claude-sandbox/credential`. smolbento's `config.toml` (the 1Password SSH agent
+  socket) and `secrets.toml` are in my dotfiles, linked into `~/.config/smolbento/`.
+- Subagents and commands come from APM, which installs them for both Claude and OpenCode.
+- Skills: `sbt skills import` collects the host's skills into smolbento's shared store; re-run
+  it after APM updates.
+
+## The kits
+
+Kit changes apply to **new** sandboxes: `sbt rm <name>`, then `sandbox` again. Check an edit
+with `sbt kit validate ./<kit>`.
+
+### git-signing
 
 `git-signing/git-signing.yaml` gives the sandbox your git identity (`user.name`/`user.email`
-from the repo you run `sandbox` in) and, when `user.signingkey` is set, SSH-signed commits.
-The private key stays in 1Password: smolbento forwards your SSH agent into the sandbox while
-you're attached (listing keys and signing only), and 1Password asks you to approve. Commits
-come back with their signatures.
+from the repo you run `sandbox` in) and, when `sandbox` passes it a key, SSH-signed commits.
+`sandbox` passes one only when `gpg.format` is `ssh` and `user.signingkey` is an SSH public
+key or a file holding one; anything else would make every commit fail. The private key stays
+in your SSH agent: smolbento forwards it into the sandbox while you're attached (listing keys
+and signing only). Commits come back with their signatures.
 
-## The nix-tools kit
+### nix-tools
 
-`nix-tools/nix-tools.yaml` is a smolbento v3 mixin kit (needs smolbento 0.19.1+) that adds to
-every sandbox `sandbox` creates:
+`nix-tools/nix-tools.yaml` adds to every sandbox:
 
-- Nix (pinned, checksummed installer, single-user, flakes on) and direnv, installed on the
+- Nix (pinned, checksummed installer, single-user, flakes on), direnv and xz, installed on the
   sandbox's first start;
 - `PATH` with the Nix profile in front of the agent image's own, `OLLAMA_HOST=http://host.docker.internal:11434`,
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
@@ -74,33 +125,32 @@ every sandbox `sandbox` creates:
 
 Docker inside the sandbox comes from smolbento's built-in `docker` kit.
 
-Kit changes, policy host access and new secret services apply to **new** sandboxes:
-`sbt rm <name>`, then `sandbox` again. Check a kit edit with `sbt kit validate ./nix-tools`.
+### agent-config
 
-## The agent-config kit
+On each launch `sandbox` rebuilds `~/.local/share/sandbox/agent-config/`:
 
-Your personal agent instructions, subagents and commands, for every agent. On each launch
-`sandbox` rebuilds `~/.local/share/sandbox/agent-config/` from your dotfiles:
+- `AGENTS.md`: [your instructions](#your-instructions), joined.
+- `claude/` and `opencode/`: each agent's `agents` and `commands`. OpenCode's lose `tools:`,
+  `model:` and `color:`, which the sandbox's older OpenCode rejects (they come in Claude's
+  format from APM).
 
-- `AGENTS.md`: `~/.config/agents/core.md`, `sandbox.md` and `~/.claude/CLAUDE.private.md` (if
-  present) in one file, frontmatter removed. `host.md` stays on the host.
-- `claude/` and `opencode/`: each agent's `agents` and `commands`, as APM installed them.
-  OpenCode's lose `tools:`, `model:` and `color:`, which the sandbox's older OpenCode rejects.
-
-`sandbox` mounts that directory read-only, at the same path, as a second workspace
-(`sbt run … . <dir>:ro`). smolvm enforces it on the host side, so not even root in the VM
-can write to it. `agent-config/agent-config.yaml` gets the path as a kit argument and, on
-every start, links each agent's files to it: `~/.claude/CLAUDE.md`,
-`~/.config/opencode/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md` (Antigravity) and
+`sandbox` mounts that folder read-only, at the same path, as a second workspace
+(`sbt run … . <dir>:ro`). smolvm enforces it on the host side, so not even root in the VM can
+write to it. `agent-config/agent-config.yaml` gets the path as a kit argument and, on every
+start, links each agent's files to it: `~/.claude/CLAUDE.md`, `~/.config/opencode/AGENTS.md`,
+`~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md` (Antigravity) and
 `~/.copilot/copilot-instructions.md`, plus the Claude and OpenCode subagents and commands.
 Being a mount, it updates running sandboxes too, on the next `sandbox` run from anywhere.
 
-It's a copy rather than the dotfiles themselves because the instructions come from several
-places, and need joining and a few format fixes.
+It also allows `opencode.ai`, where OpenCode's default model is served.
 
-Skills come from `sbt skills import`, which collects the host's skills into smolbento's store
-and shares them with every sandbox. Re-run it after APM updates; sandboxes pick new skills up
-on their next start. Hooks and MCP servers aren't available in sandboxes.
+Hooks and MCP servers aren't available in sandboxes.
+
+## Tests
+
+```sh
+bash tests/run.sh   # the script against a stub sbt: no VM, network or Nix
+```
 
 ## How it stays safe
 
@@ -108,7 +158,8 @@ on their next start. Hooks and MCP servers aren't available in sandboxes.
 |------|------------|
 | Agent damages your files | The repo is mounted read-only; the agent works on a clone in the VM |
 | Agent plants git hooks, config or `.envrc` | Only commits come back (`git fetch`, objects fsck'd) |
-| Data exfiltration | Network is deny-by-default plus the `balanced` allow list |
-| Credential theft | The VM sees a placeholder; the real token is swapped in on the host, only for Anthropic's hosts |
-| Signing as you | While you're attached, the agent can ask your SSH agent to sign; 1Password asks you to approve. Every key in the agent is offered, not just the signing key |
-| Reaching host services | **Open:** every host loopback port is reachable (for Ollama), until smolvm can open a single port |
+| Data exfiltration | Network is deny-by-default plus the `balanced` allow list (and the kits' few additions) |
+| Credential theft | The VM sees a placeholder; the real token is swapped in on the host, only for the service's hosts |
+| Tampering with instructions | They're mounted read-only, enforced by smolvm on the host |
+| Signing as you | While you're attached, the agent can ask your SSH agent to sign. Every key in the agent is offered, not just the signing key; 1Password, for one, asks you to approve each use |
+| Reaching host services | **Open** if you allowed `localhost`: every host loopback port is reachable, until smolvm can open a single port |

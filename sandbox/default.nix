@@ -10,7 +10,7 @@ let
   sandbox = pkgs.writeShellApplication {
     name = "sandbox";
     runtimeEnv.SANDBOX_KITS = kits;
-    text = builtins.readFile ./sandbox.sh;
+    text = builtins.readFile ./sandbox;
   };
 in
 {
