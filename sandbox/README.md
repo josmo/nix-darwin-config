@@ -59,7 +59,7 @@ Then, once:
    a 1Password reference). The VM only ever sees a placeholder.
 3. To sign sandbox commits: `gpg.format ssh` and `user.signingkey` set to your SSH public key
    (the key itself, or a path to the `.pub` file), with that key in your SSH agent. smolbento
-   forwards the agent while you're attached. Without it, commits are made unsigned, with a note.
+   forwards the agent while the sandbox runs. Without it, commits are made unsigned, with a note.
 
 ## Your instructions
 
@@ -110,8 +110,13 @@ with `sbt kit validate ./<kit>`.
 from the repo you run `sandbox` in) and, when `sandbox` passes it a key, SSH-signed commits.
 `sandbox` passes one only when `gpg.format` is `ssh` and `user.signingkey` is an SSH public
 key or a file holding one; anything else would make every commit fail. The private key stays
-in your SSH agent: smolbento forwards it into the sandbox while you're attached (listing keys
-and signing only). Commits come back with their signatures.
+in your SSH agent: smolbento forwards it into the sandbox whenever the sandbox runs, attached
+or not (listing keys and signing only). Commits come back with their signatures.
+
+The kit also asks for the agent (`ssh-agent@1`) for git signing only, since agents from
+workload kits, such as Antigravity, get none otherwise. There the agent signs commits and
+refuses SSH logins. Built-in agents (Claude, OpenCode, …) always get it with no limits, which a
+kit can't narrow: they can also log in over SSH as you (`git push` to an SSH remote).
 
 ### nix-tools
 
@@ -161,5 +166,5 @@ bash tests/run.sh   # the script against a stub sbt: no VM, network or Nix
 | Data exfiltration | Network is deny-by-default plus the `balanced` allow list (and the kits' few additions) |
 | Credential theft | The VM sees a placeholder; the real token is swapped in on the host, only for the service's hosts |
 | Tampering with instructions | They're mounted read-only, enforced by smolvm on the host |
-| Signing as you | While you're attached, the agent can ask your SSH agent to sign. Every key in the agent is offered, not just the signing key; 1Password, for one, asks you to approve each use |
+| Signing or logging in as you | While the sandbox runs, attached or not, the agent can ask your SSH agent to sign: commits, and for built-in agents SSH logins too (such as `git push` over SSH). Every key in the agent is offered, not just the signing key. 1Password, for one, asks you to approve each use; `sbt settings set ssh.agentForwardingEnabled false` turns it off for every sandbox |
 | Reaching host services | **Open** if you allowed `localhost`: every host loopback port is reachable, until smolvm can open a single port |
