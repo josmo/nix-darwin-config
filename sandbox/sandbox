@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # `sandbox [--env-arg NAME=VALUE]… [agent] [[--] agent args]`: run a coding agent in a smolbento
 # sandbox; see README.md.
-# Stages your agent config and finds your signing key, then runs `sbt env run` with the env files:
+# Stages your agent config and finds your signing key, then runs `bento env run` with the env files:
 # sbxenv.yaml beside this script (found through symlinks: a link on PATH, or Nix's link into the
-# store), then your own layers where they exist. sbt and git come from PATH.
+# store), then your own layers where they exist. bento and git come from PATH.
 set -euo pipefail
 kits=$(dirname "$(realpath "$0")")
 # Extra args for the env files (such as a project file's own), before the agent.
@@ -76,5 +76,5 @@ for f in "$kits/agents/$agent.yaml" "$config/agents/$agent.yaml" "$config/sbxenv
   if [ -e "$f" ]; then files+=("$f"); fi
 done
 args=(--env-arg "agent=$agent" --env-arg "workspace=$PWD" --env-arg "stage=$stage" --env-arg "signingKey=$key" ${extra[@]+"${extra[@]}"})
-if [ $# -gt 0 ]; then exec sbt env run "${files[@]}" "${args[@]}" -- "$@"; fi
-exec sbt env run "${files[@]}" "${args[@]}"
+if [ $# -gt 0 ]; then exec bento env run "${files[@]}" "${args[@]}" -- "$@"; fi
+exec bento env run "${files[@]}" "${args[@]}"

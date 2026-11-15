@@ -1,4 +1,4 @@
-# Coding-agent sandboxes with smolbento (`sbt`): one smolvm microVM per repo and agent.
+# Coding-agent sandboxes with smolbento (`bento`): one smolvm microVM per repo and agent.
 # Usage: `sandbox [agent] [-- agent args]`; see README.md.
 { pkgs, ... }:
 let
@@ -12,10 +12,9 @@ in
 {
   environment.systemPackages = [ sandbox ];
 
-  # smolvm is a dependency of smolbento, but stays listed: Homebrew 7 only loads formulae from
-  # trusted taps, and brew bundle trusts the formulae its Brewfile names.
-  homebrew.taps = [ "smol-machines/tap" "pelotech/tap" "docker/tap" ];
-  homebrew.brews = [ "smol-machines/tap/smolvm" "pelotech/tap/smolbento" ];
+  # smolbento downloads the smolvm release it's tested with on first use (into ~/.smolbento).
+  homebrew.taps = [ "pelotech/tap" "docker/tap" ];
+  homebrew.brews = [ "pelotech/tap/smolbento" ];
   # Docker Sandboxes, alongside smolbento.
   homebrew.casks = [ "docker/tap/sbx" ];
 }

@@ -1,4 +1,4 @@
-# The `sandbox` command's shared environment, for `sbt env run` (sbx's sbxenv.yaml format); see
+# The `sandbox` command's shared environment, for `bento env run` (sbx's sbxenv.yaml format); see
 # README.md. The script passes the args and layers your own files on top. Host commands
 # (`lifecycle`, `command:` secrets) don't go here: they'd ask for approval on every run.
 schemaVersion: "1"

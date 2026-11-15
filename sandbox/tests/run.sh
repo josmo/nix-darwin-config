@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests for ../sandbox, with a stub `sbt` that records its arguments.
+# Tests for ../sandbox, with a stub `bento` that records its arguments, and for the agent-config
+# kit's startup step.
 # Run: bash sandbox/tests/run.sh   (no VM, network or Nix needed)
 set -uo pipefail
 
@@ -8,22 +9,22 @@ root=$(dirname "$here")  # the sandbox/ folder, physical path (realpath gives th
 script=$root/sandbox
 ORIG_PATH=$PATH
 
-# A fresh HOME, XDG dirs, git config and git repo (the cwd), with the stub sbt first on PATH.
+# A fresh HOME, XDG dirs, git config and git repo (the cwd), with the stub bento first on PATH.
 setup() {
   t=$(cd "$(mktemp -d)" && pwd -P)
   export HOME=$t/home XDG_CONFIG_HOME=$t/config XDG_DATA_HOME=$t/data
-  export GIT_CONFIG_GLOBAL=$t/gitconfig GIT_CONFIG_NOSYSTEM=1 STUB_LOG=$t/sbt.log
+  export GIT_CONFIG_GLOBAL=$t/gitconfig GIT_CONFIG_NOSYSTEM=1 STUB_LOG=$t/bento.log
   unset SANDBOX_KITS
   mkdir -p "$HOME" "$t/bin" "$t/repo"
   : > "$GIT_CONFIG_GLOBAL"
-  cat > "$t/bin/sbt" <<'EOF'
+  cat > "$t/bin/bento" <<'EOF'
 #!/usr/bin/env bash
 # env: log one argument per line.
 case $1 in
   env) printf '%s\n' "$@" > "$STUB_LOG" ;;
 esac
 EOF
-  chmod +x "$t/bin/sbt"
+  chmod +x "$t/bin/bento"
   export PATH=$t/bin:$ORIG_PATH
   git -C "$t/repo" init -q
   stage=$XDG_DATA_HOME/sandbox/agent-config
@@ -37,7 +38,7 @@ assert_eq() { [ "$1" = "$2" ] || fail "expected: $(printf %q "$2")" "got: $(prin
 assert_line() { grep -qxF -- "$2" "$1" || fail "no line '$2' in $1: $(cat "$1" 2>&1)"; }
 assert_contains() { grep -qF -- "$2" "$1" || fail "no '$2' in $1: $(cat "$1" 2>&1)"; }
 assert_not_contains() { ! grep -qE -- "$2" "$1" || fail "unexpected '$2' in $1"; }
-# files: the env files passed to `sbt env run` (log lines from 3 up to the first --env-arg).
+# files: the env files passed to `bento env run` (log lines from 3 up to the first --env-arg).
 files() { awk 'NR > 2 && /^--env-arg$/ { exit } NR > 2' "$STUB_LOG"; }
 
 # --- Kits and env files beside the script; runs without Nix ---
@@ -107,7 +108,7 @@ test_bad_agent_names() {
     rm -f "$STUB_LOG"
     if run_sandbox "$a"; then fail "accepted agent '$a'"; fi
     assert_contains "$t/err" "isn't an agent name"
-    [ ! -e "$STUB_LOG" ] || fail "sbt ran for agent '$a'"
+    [ ! -e "$STUB_LOG" ] || fail "bento ran for agent '$a'"
   done
 }
 
@@ -129,7 +130,7 @@ test_extra_env_args_default_agent() {
 test_env_arg_needs_value() {
   if run_sandbox --env-arg; then fail "accepted --env-arg without a value"; fi
   assert_contains "$t/err" "--env-arg needs NAME=VALUE"
-  [ ! -e "$STUB_LOG" ] || fail "sbt ran"
+  [ ! -e "$STUB_LOG" ] || fail "bento ran"
 }
 
 test_paths_with_spaces() {
@@ -272,6 +273,65 @@ test_key_missing_file() {
   key_case ssh "~/.ssh/nope.pub"
   assert_line "$STUB_LOG" signingKey=
   assert_contains "$t/err" "won't be signed"
+}
+
+# --- The agent-config kit's startup step, run on the host with a fake HOME ---
+
+# run_kit: run the kit's startup command with HOME=$t/home and AGENT_CONFIG=$stage.
+run_kit() {
+  awk '/- command: \|/ { on = 1; next } on && NF && !/^            / { exit } on { sub(/^ {12}/, ""); print }' \
+    "$root/agent-config/agent-config.yaml" > "$t/kit.sh"
+  [ -s "$t/kit.sh" ] || fail "no startup command in agent-config.yaml"
+  AGENT_CONFIG=${1-$stage} sh "$t/kit.sh" || fail "kit step exit $?"
+}
+# kit_stage TEXT: a staging dir whose AGENTS.md holds TEXT.
+kit_stage() { mkdir -p "$stage"; printf '%s\n' "$1" > "$stage/AGENTS.md"; }
+B='<!-- sandbox:instructions start -->' E='<!-- sandbox:instructions end -->'
+
+test_kit_keeps_agent_file() {
+  kit_stage "# My rules"
+  mkdir -p "$HOME/.claude"
+  printf '## Claude Code\nguide\n\n## Kits\n- **nix** — See nix.md.\n' > "$HOME/.claude/CLAUDE.md"
+  run_kit
+  assert_eq "$(cat "$HOME/.claude/CLAUDE.md")" "$(printf '## Claude Code\nguide\n\n## Kits\n- **nix** — See nix.md.\n\n%s\n# My rules\n%s' "$B" "$E")"
+}
+
+test_kit_replaces_its_block() {
+  kit_stage "old rules"
+  mkdir -p "$HOME/.claude"; printf 'guide\n' > "$HOME/.claude/CLAUDE.md"
+  run_kit; kit_stage "new rules"; run_kit; run_kit
+  assert_eq "$(cat "$HOME/.claude/CLAUDE.md")" "$(printf 'guide\n\n%s\nnew rules\n%s' "$B" "$E")"
+}
+
+test_kit_replaces_old_link() {
+  kit_stage "rules"
+  mkdir -p "$HOME/.claude"; ln -s "$stage/AGENTS.md" "$HOME/.claude/CLAUDE.md"
+  run_kit
+  [ ! -L "$HOME/.claude/CLAUDE.md" ] || fail "still a link"
+  assert_eq "$(cat "$HOME/.claude/CLAUDE.md")" "$(printf '%s\nrules\n%s' "$B" "$E")"
+  assert_eq "$(cat "$stage/AGENTS.md")" "rules"
+}
+
+test_kit_every_agent_file() {
+  kit_stage "rules"
+  run_kit
+  for f in .claude/CLAUDE.md .config/opencode/AGENTS.md .codex/AGENTS.md .gemini/GEMINI.md \
+    .copilot/copilot-instructions.md; do
+    assert_eq "$(cat "$HOME/$f")" "$(printf '%s\nrules\n%s' "$B" "$E")"
+  done
+}
+
+test_kit_links_agents_and_commands() {
+  kit_stage "rules"; mkdir -p "$stage/claude/agents" "$stage/opencode/commands"
+  run_kit
+  assert_eq "$(readlink "$HOME/.claude/agents")" "$stage/claude/agents"
+  assert_eq "$(readlink "$HOME/.config/opencode/commands")" "$stage/opencode/commands"
+  [ ! -e "$HOME/.claude/commands" ] || fail "linked a missing dir"
+}
+
+test_kit_without_config() {
+  run_kit ""
+  [ -z "$(ls -A "$HOME")" ] || fail "wrote $(ls -A "$HOME")"
 }
 
 # --- runner ---
