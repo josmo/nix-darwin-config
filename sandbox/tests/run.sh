@@ -150,12 +150,14 @@ test_shared_file_declares_kits() {
   grep -v '^[[:space:]]*#' "$root/sbxenv.yaml" > "$f"
   # shellcheck disable=SC2016 # a literal ${{ }} reference, as in the file
   for s in 'agent: ${{ env.args.agent }}' 'clone: true' 'readOnly: true' \
-    'ghcr.io/pelotech/smolbento/kits/nix:0.1.0' 'source: git-signing' 'source: agent-config' \
+    'ghcr.io/pelotech/smolbento/kits/nix:0.2.0' 'source: git-signing' 'source: agent-config' \
     'OLLAMA_HOST:' 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'; do
     assert_contains "$f" "$s"
   done
   assert_not_contains "$f" 'lifecycle|command:'
   [ ! -e "$root/nix-tools" ] || fail "nix-tools still present"
+  # git-signing is smolbento's built-in kit (0.29+); a local folder would shadow it.
+  [ ! -e "$root/git-signing" ] || fail "local git-signing kit still present"
 }
 
 test_agent_file_antigravity() {
@@ -265,14 +267,14 @@ test_key_file_comment_underscore() {
 test_key_gpg() {
   key_case "" ABCDEF1234
   assert_line "$STUB_LOG" signingKey=
-  assert_contains "$t/err" "won't be signed"
+  assert_contains "$t/err" "signed with the first key in your SSH agent"
 }
 
 test_key_missing_file() {
   # shellcheck disable=SC2088 # a literal ~, as git config stores it
   key_case ssh "~/.ssh/nope.pub"
   assert_line "$STUB_LOG" signingKey=
-  assert_contains "$t/err" "won't be signed"
+  assert_contains "$t/err" "signed with the first key in your SSH agent"
 }
 
 # --- The agent-config kit's startup step, run on the host with a fake HOME ---

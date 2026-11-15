@@ -48,10 +48,11 @@ for f in "$stage"/opencode/agents/*.md; do
 done
 
 # The SSH public key to sign sandbox commits with, or nothing. user.signingkey may be the key
-# itself ("ssh-ed25519 AAAA...", optionally "key::"-prefixed) or a file holding it; anything
-# else (a GPG key ID, no gpg.format=ssh) would make every commit in the sandbox fail to sign.
+# itself ("ssh-ed25519 AAAA...", optionally "key::"-prefixed) or a file holding it. Anything else
+# (a GPG key ID, no gpg.format=ssh) passes nothing, and the git-signing kit signs with the agent's
+# first key.
 signing_key() {
-  local key fmt type body pattern='^[A-Za-z0-9@.+/= -]*$'  # the git-signing kit's own pattern
+  local key fmt type body pattern='^[A-Za-z0-9@.+/= -]*$'  # within the git-signing kit's pattern
   key=$(git config user.signingkey || true)
   [ -n "$key" ] || return 0
   fmt=$(git config gpg.format || true)
@@ -65,7 +66,7 @@ signing_key() {
   if [ "$fmt" = ssh ] && [[ $key =~ ^(ssh-|ecdsa-|sk-) && $key =~ $pattern ]]; then
     printf '%s\n' "$key"
   else
-    echo "sandbox: user.signingkey isn't an SSH public key; sandbox commits won't be signed" >&2
+    echo "sandbox: user.signingkey isn't an SSH public key; sandbox commits will be signed with the first key in your SSH agent" >&2
   fi
 }
 key=$(signing_key)

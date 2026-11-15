@@ -86,7 +86,7 @@ Pick how much you take. Each option builds on the one before it:
 | [2. Plus nix-darwin-config](#2-plus-nix-darwin-config) | The above, installed with the rest of your Mac's setup | Nix and Homebrew; a fork of this repo |
 | [3. Plus dotfiles](#3-plus-dotfiles) | The above, plus shared instructions and smolbento settings that follow you between Macs | A dotfiles repo (a fork of [mine](https://github.com/josmo/dotfiles) or your own) |
 
-All three need smolbento 0.28 or newer (its command is `bento`). Then do the
+All three need smolbento 0.29 or newer (its command is `bento`). Then do the
 [one-time setup](#once-whichever-you-pick).
 
 ### 1. Just the sandbox
@@ -144,7 +144,9 @@ The rest stays by hand, because it shouldn't be in git or isn't a file:
    `secrets.toml`, skip this.
 3. To sign sandbox commits: `gpg.format ssh` and `user.signingkey` set to your SSH public key
    (the key itself, or a path to the `.pub` file), with that key in your SSH agent. smolbento
-   forwards the agent while the sandbox runs. Without it, commits are made unsigned, with a note.
+   forwards the agent while the sandbox runs. Without that setting, commits are signed with the
+   agent's first key; with no agent at all, the agent can't commit (see
+   [git-signing](#git-signing)).
 
 ## Your instructions
 
@@ -177,17 +179,23 @@ with `bento kit validate ./<kit>`.
 
 ### git-signing
 
-`git-signing/git-signing.yaml` gives the sandbox your git identity (`user.name`/`user.email`
-from the repo you run `sandbox` in) and, when `sandbox` passes it a key, SSH-signed commits.
-`sandbox` passes one only when `gpg.format` is `ssh` and `user.signingkey` is an SSH public
-key or a file holding one; anything else would make every commit fail. The private key stays
-in your SSH agent: smolbento forwards it into the sandbox whenever the sandbox runs, attached
-or not (listing keys and signing only). Commits come back with their signatures.
+smolbento's built-in [`git-signing` kit](https://github.com/pelotech/smolbento/tree/main/kits/git-signing)
+(0.29+), listed in `sbxenv.yaml`. It gives the sandbox your git identity (`user.name` and
+`user.email` from the repo you run `sandbox` in) and signs commits in repos with a remote, which
+includes the agent's clone, with a key from your SSH agent. The private key never enters the
+sandbox; commits come back with their signatures, and `git log --show-signature` verifies them
+inside. Tags and scratch `git init` repos stay unsigned.
 
-The kit also asks for the agent (`ssh-agent@1`) for git signing only, since agents from
-workload kits, such as Antigravity, get none otherwise. There the agent signs commits and
-refuses SSH logins. Built-in agents (Claude, OpenCode, …) always get it with no limits, which a
-kit can't narrow: they can also log in over SSH as you (`git push` to an SSH remote).
+`sandbox` passes your `user.signingkey` as the kit's `signingKey`, so the kit signs with that key
+even when the agent holds several, when `gpg.format` is `ssh` and `user.signingkey` is an SSH
+public key or a file holding one. Otherwise it warns and passes nothing, and the kit signs with
+the first key your agent lists. With no SSH agent at all, the agent's commits are refused, with a
+`git-signing:` message saying what to fix.
+
+The kit asks for your agent (`ssh-agent@1`) for git signatures only, since agents from workload
+kits, such as Antigravity, get none otherwise. There the agent signs commits and refuses SSH
+logins. Built-in agents (Claude, OpenCode, …) always get it with no limits, which a kit can't
+narrow: they can also log in over SSH as you (`git push` to an SSH remote).
 
 ### Nix
 

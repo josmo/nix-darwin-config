@@ -22,7 +22,8 @@ additionalWorkspaces:
     readOnly: true
 kits:
   # Nix (flakes), direnv and xz, from smolbento; pinned while it's 0.x.
-  - ghcr.io/pelotech/smolbento/kits/nix:0.1.0
+  - ghcr.io/pelotech/smolbento/kits/nix:0.2.0
+  # smolbento's built-in kit: your git identity and commits signed through your SSH agent.
   - source: git-signing
     args:
       signingKey: ${{ env.args.signingKey }}
