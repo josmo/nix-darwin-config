@@ -4,7 +4,7 @@ schemaVersion: "3"
 kind: mixin
 displayName: Agent config
 description: Adds personal instructions to each agent's own instructions file and links its subagents and commands to a read-only host directory.
-version: "3.0.0"
+version: "3.1.0"
 provides: [agent-config]
 
 args:
@@ -53,6 +53,9 @@ capabilities:
             add "$h/.codex/AGENTS.md"
             add "$h/.gemini/GEMINI.md"
             add "$h/.copilot/copilot-instructions.md"
+            # Antigravity's kit writes its guide and smolbento's kit tips to ~/AGENTS.md, which
+            # Antigravity doesn't read; ~/.gemini/AGENTS.md it does.
+            link "$h/AGENTS.md" "$h/.gemini/AGENTS.md"
             for a in claude opencode; do
               d=$h/.$a; [ $a = opencode ] && d=$h/.config/opencode
               link "$c/$a/agents" "$d/agents"

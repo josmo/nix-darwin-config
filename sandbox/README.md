@@ -192,6 +192,8 @@ as a kit argument and, on every start:
   work here) and smolbento's `## Kits` list, which points to each kit's tip, such as Nix's.
 - Links the Claude and OpenCode subagents and commands to the folder, so those update in
   running sandboxes too.
+- Links `~/.gemini/AGENTS.md` to `~/AGENTS.md`, where Antigravity's kit writes its guide and the
+  kit tips but where Antigravity doesn't look.
 
 A sandbox picks up changed instructions when it next starts, which `sandbox` does when the
 sandbox is stopped (it stops when the agent exits). Sandboxes made with agent-config 2.x had

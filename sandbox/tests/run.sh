@@ -150,7 +150,7 @@ test_shared_file_declares_kits() {
   grep -v '^[[:space:]]*#' "$root/sbxenv.yaml" > "$f"
   # shellcheck disable=SC2016 # a literal ${{ }} reference, as in the file
   for s in 'agent: ${{ env.args.agent }}' 'clone: true' 'readOnly: true' \
-    'ghcr.io/pelotech/smolbento/kits/nix:0.0.2' 'source: git-signing' 'source: agent-config' \
+    'ghcr.io/pelotech/smolbento/kits/nix:0.1.0' 'source: git-signing' 'source: agent-config' \
     'OLLAMA_HOST:' 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'; do
     assert_contains "$f" "$s"
   done
@@ -327,6 +327,18 @@ test_kit_links_agents_and_commands() {
   assert_eq "$(readlink "$HOME/.claude/agents")" "$stage/claude/agents"
   assert_eq "$(readlink "$HOME/.config/opencode/commands")" "$stage/opencode/commands"
   [ ! -e "$HOME/.claude/commands" ] || fail "linked a missing dir"
+}
+
+test_kit_links_home_agents_file_for_antigravity() {
+  kit_stage "rules"; printf 'guide\n' > "$HOME/AGENTS.md"
+  run_kit
+  assert_eq "$(readlink "$HOME/.gemini/AGENTS.md")" "$HOME/AGENTS.md"
+}
+
+test_kit_no_home_agents_file() {
+  kit_stage "rules"
+  run_kit
+  [ ! -e "$HOME/.gemini/AGENTS.md" ] && [ ! -L "$HOME/.gemini/AGENTS.md" ] || fail "linked a missing file"
 }
 
 test_kit_without_config() {
