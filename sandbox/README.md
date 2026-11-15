@@ -78,7 +78,20 @@ approve a file you didn't write.
 
 ## Install
 
-On a Mac with Homebrew (smolbento 0.28 or newer, whose command is `bento`):
+Pick how much you take. Each option builds on the one before it:
+
+| You take | You get | You need |
+|----------|---------|----------|
+| [1. Just the sandbox](#1-just-the-sandbox) | The `sandbox` command | Homebrew |
+| [2. Plus nix-darwin-config](#2-plus-nix-darwin-config) | The above, installed with the rest of your Mac's setup | Nix and Homebrew; a fork of this repo |
+| [3. Plus dotfiles](#3-plus-dotfiles) | The above, plus shared instructions and smolbento settings that follow you between Macs | A dotfiles repo (a fork of [mine](https://github.com/josmo/dotfiles) or your own) |
+
+All three need smolbento 0.28 or newer (its command is `bento`). Then do the
+[one-time setup](#once-whichever-you-pick).
+
+### 1. Just the sandbox
+
+No Nix and no fork: clone this repo anywhere and link the script onto your `PATH`.
 
 ```sh
 brew install pelotech/tap/smolbento   # brings its own smolvm on first use
@@ -88,16 +101,47 @@ ln -s "$PWD/nix-darwin-config/sandbox/sandbox" ~/.local/bin/sandbox   # or any d
 ```
 
 If `~/.local/bin` isn't on your `PATH` yet, add `export PATH="$HOME/.local/bin:$PATH"` to
-`~/.zshrc`.
+`~/.zshrc`. `sandbox` finds its kits next to itself (through the link), so `git pull` updates
+everything. The rest of the repo is unused.
 
-`sandbox` finds its kits next to itself (through the link), so `git pull` updates everything.
-With nix-darwin, the `./sandbox` module installs it all instead.
+### 2. Plus nix-darwin-config
 
-Then, once:
+Fork the repo and follow [Fork it](../README.md#fork-it) in the main README. Keep `./sandbox`
+in the flake's `modules`: it installs the `sandbox` command, Homebrew's smolbento and Docker's
+`sbx`. Set `dotfiles = null;` in `user.nix` if you're not taking option 3.
+
+The command runs from the Nix store copy of this folder, so edits here (to the script, kits or
+env files) take effect after `nh darwin switch`, not on save. Your own files under
+`~/.config/sandbox/` aren't affected: they're read on each run.
+
+### 3. Plus dotfiles
+
+Point `dotfiles` in `user.nix` at your dotfiles repo; on every switch, `link-dotfiles.sh` links
+its files into your home (see [Dotfiles](../README.md#dotfiles)). For the sandbox, the files that
+matter are:
+
+| In the dotfiles repo | What it does | Instead of |
+|----------------------|--------------|------------|
+| `.config/sandbox/instructions/*.md` | [Your instructions](#your-instructions) for every agent. Mine: `10-core.md`, a link to the `core.md` my agents on the Mac read too, and `20-host.md`, the host tools that aren't in the VM | Making the folder by hand |
+| `.config/smolbento/secrets.toml` | The Claude token as a 1Password reference (`op://Private/claude-sandbox/credential`), not the token. Put your own `claude setup-token` token in 1Password and point the reference at it | `bento secret set claude` (setup step 2) |
+| `.config/smolbento/config.toml` | smolbento settings; mine points the SSH agent at 1Password's socket. Change the user name in the path, or drop the file if you use the default SSH agent | — |
+
+The rest stays by hand, because it shouldn't be in git or isn't a file:
+
+- A private instructions file: `ln -s <private file> ~/.config/sandbox/instructions/90-private.md`.
+- The network policy (`bento policy init balanced`): smolbento keeps it in
+  `~/.config/smolbento/policy.toml` and changes it as you allow things.
+- Subagents and commands: mine come from APM (its manifest is in the dotfiles), which installs
+  them for both Claude and OpenCode, where `sandbox` picks them up.
+- Skills: `bento skills import` collects the host's skills into smolbento's shared store; re-run
+  it after APM updates.
+
+### Once, whichever you pick
 
 1. `bento policy init balanced`: deny-by-default network with a common allow list.
 2. `claude setup-token`, then `bento secret set claude` and paste the token (or use `--ref` for
-   a 1Password reference). The VM only ever sees a placeholder.
+   a 1Password reference). The VM only ever sees a placeholder. With option 3's
+   `secrets.toml`, skip this.
 3. To sign sandbox commits: `gpg.format ssh` and `user.signingkey` set to your SSH public key
    (the key itself, or a path to the `.pub` file), with that key in your SSH agent. smolbento
    forwards the agent while the sandbox runs. Without it, commits are made unsigned, with a note.
@@ -125,20 +169,6 @@ bento policy allow network localhost
 
 Lets sandboxes created afterwards reach `host.docker.internal`. It opens **every** port on
 your Mac's localhost (smolvm can't open just one yet), and kits can't grant it.
-
-## How I set mine up
-
-As an example, not a requirement ([dotfiles](https://github.com/josmo/dotfiles)):
-
-- Instructions: `10-core.md` (a symlink to my shared `core.md`), `20-host.md` (my host tools
-  that aren't in the VM), and `90-private.md`, a hand-made link to a private file that never
-  goes in git.
-- The Claude token lives in 1Password (item `claude-sandbox`, vault `Private`), referenced as
-  `op://Private/claude-sandbox/credential`. smolbento's `config.toml` (the 1Password SSH agent
-  socket) and `secrets.toml` are in my dotfiles, linked into `~/.config/smolbento/`.
-- Subagents and commands come from APM, which installs them for both Claude and OpenCode.
-- Skills: `bento skills import` collects the host's skills into smolbento's shared store; re-run
-  it after APM updates.
 
 ## The kits
 
