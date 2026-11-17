@@ -78,6 +78,7 @@ in
     kustomize
     kustomize-sops
     mas
+    mole
     neovim
     nmap
     openconnect
