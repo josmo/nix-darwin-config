@@ -13,6 +13,14 @@ let
   # Pushes are pointed at SSH right after cloning.
   dotfilesRepo = "https://github.com/${user.dotfiles.repo}.git";
   dotfilesPushUrl = "git@github.com:${user.dotfiles.repo}.git";
+  apm = pkgs.apm-cli.overridePythonAttrs (old: {
+    dontCheckRuntimeDeps = true;
+  });
+  # What `apm install` shells out to: git fetches packages, python3 runs apm.yml's lifecycle script.
+  apmPath = pkgs.lib.makeBinPath [
+    pkgs.git
+    pkgs.python3
+  ];
 in
 {
   nixpkgs.config = {
@@ -26,14 +34,20 @@ in
   system.activationScripts.postActivation.text = pkgs.lib.optionalString (dotfiles != null) ''
     sudo --set-home --user=${user.username} -- env DOTFILES=${dotfiles} DOTFILES_REPO=${dotfilesRepo} DOTFILES_PUSH_URL=${dotfilesPushUrl} \
       ${pkgs.bash}/bin/bash ${./link-dotfiles.sh}
+
+    # Re-apply APM after linking: the copies overwrite APM-written config (opencode.json's mcp),
+    # and apm.yml changes only deploy on install. Offline, it only warns.
+    if [ -f ${home}/.apm/apm.yml ]; then
+      sudo --set-home --user=${user.username} -- env PATH=${apmPath}:/usr/bin:/bin \
+        ${apm}/bin/apm install --global \
+        || echo "warning: apm install failed; run 'apm install --global'" >&2
+    fi
   '';
   environment.systemPackages = with pkgs; [
     act
     age
     age-plugin-yubikey
-    (apm-cli.overridePythonAttrs (old: {
-      dontCheckRuntimeDeps = true;
-    }))
+    apm
     antigravity-cli
     argocd
     autoconf

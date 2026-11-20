@@ -27,6 +27,10 @@ Dotfiles live in their own repo (set in `user.nix`), not here. On every switch,
    (for tools that reject symlinks). The repo wins: copies are overwritten each switch.
 4. Removes symlinks whose target was `git rm`'d.
 
+Then, if the dotfiles ship `.apm/apm.yml`, activation runs `apm install --global`, so APM
+changes deploy on switch and APM-written config the copies overwrote (e.g. opencode's `mcp`)
+comes back. Offline, it prints a warning and the switch continues.
+
 The checkout path is exported as `$DOTFILES`. To start your own dotfiles repo, create one
 with your dotfiles at the paths they'd have under `$HOME` (`.zshrc`, `.gitconfig`,
 `.config/...`). Never commit credentials (`.npmrc`, `.aws/`, `.kube/`, gh tokens).
