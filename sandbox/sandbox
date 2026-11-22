@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # `sandbox [--env-arg NAME=VALUE]… [agent] [[--] agent args]`: run a coding agent in a smolbento
 # sandbox; see README.md.
-# Stages your agent config and finds your signing key, then runs `bento env run` with the env files:
-# sbxenv.yaml beside this script (found through symlinks: a link on PATH, or Nix's link into the
-# store), then your own layers where they exist. bento and git come from PATH.
+# Stages your agent config, then runs `bento env run`, which reads ~/.sbxenv.yaml (from dotfiles)
+# and then the project's ./sbxenv.yaml. bento comes from PATH.
 set -euo pipefail
-kits=$(dirname "$(realpath "$0")")
+# This script's folder, for sandbox.md (found through symlinks: a link on PATH, or Nix's link
+# into the store).
+here=$(dirname "$(realpath "$0")")
 # Extra args for the env files (such as a project file's own), before the agent.
 extra=()
 while [ "${1:-}" = --env-arg ]; do
@@ -16,8 +17,10 @@ done
 if [ $# -eq 0 ] || [ "$1" = -- ]; then set -- claude "$@"; fi
 agent=$1; shift
 [ "${1:-}" != -- ] || shift
-# The name picks env files below and names the sandbox: a plain word, no paths.
+# The name names the sandbox (and picks Antigravity's kit below): a plain word, no paths.
 [[ $agent =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "sandbox: '$agent' isn't an agent name" >&2; exit 2; }
+# Without it a project's sbxenv.yaml would run alone: no kits, signing or staged config.
+[ -e "$HOME/.sbxenv.yaml" ] || { echo "sandbox: no ~/.sbxenv.yaml (it comes from dotfiles); see README.md" >&2; exit 2; }
 
 # Stage personal agent config for the agent-config kit, fresh on every launch. Sandboxes see it
 # live, read-only, at the same path.
@@ -28,7 +31,7 @@ mkdir -p "$stage" && find "$stage" -mindepth 1 -delete
 # the instructions folder (optional) in name order, each without its leading frontmatter (such
 # as Antigravity's `trigger:`) and followed by a blank line.
 instructions=${XDG_CONFIG_HOME:-$HOME/.config}/sandbox/instructions
-for f in "$kits/sandbox.md" "$instructions"/*.md; do
+for f in "$here/sandbox.md" "$instructions"/*.md; do
   [ -e "$f" ] || continue
   awk 'NR == 1 && /^---$/ { fm = 1; next } fm { if (/^---$/) fm = 0; next } 1; END { print "" }' "$f"
 done > "$stage/AGENTS.md"
@@ -47,35 +50,10 @@ for f in "$stage"/opencode/agents/*.md; do
   awk '/^---$/ { n++ } !(n == 1 && /^(tools|model|color):/)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 done
 
-# The SSH public key to sign sandbox commits with, or nothing. user.signingkey may be the key
-# itself ("ssh-ed25519 AAAA...", optionally "key::"-prefixed) or a file holding it. Anything else
-# (a GPG key ID, no gpg.format=ssh) passes nothing, and the git-signing kit signs with the agent's
-# first key.
-signing_key() {
-  local key fmt type body pattern='^[A-Za-z0-9@.+/= -]*$'  # within the git-signing kit's pattern
-  key=$(git config user.signingkey || true)
-  [ -n "$key" ] || return 0
-  fmt=$(git config gpg.format || true)
-  key=${key#key::}
-  # shellcheck disable=SC2088 # git config stores a literal ~
-  case $key in "~/"*) key=$HOME/${key#"~/"} ;; esac
-  if [ -f "$key" ] && [ -r "$key" ]; then key=$(head -n 1 "$key"); fi
-  # Type and key only: the comment ("me@host") isn't needed, and may not pass the kit's pattern.
-  read -r type body _ <<< "$key" || true
-  key="$type ${body:-}"
-  if [ "$fmt" = ssh ] && [[ $key =~ ^(ssh-|ecdsa-|sk-) && $key =~ $pattern ]]; then
-    printf '%s\n' "$key"
-  else
-    echo "sandbox: user.signingkey isn't an SSH public key; sandbox commits will be signed with the first key in your SSH agent" >&2
-  fi
-}
-key=$(signing_key)
-# Env files, later wins: shared, the agent's (kit-based agents), yours, then the project's.
-config=${XDG_CONFIG_HOME:-$HOME/.config}/sandbox
-files=("$kits/sbxenv.yaml")
-for f in "$kits/agents/$agent.yaml" "$config/agents/$agent.yaml" "$config/sbxenv.yaml" "$PWD/sbxenv.yaml"; do
-  if [ -e "$f" ]; then files+=("$f"); fi
-done
-args=(--env-arg "agent=$agent" --env-arg "workspace=$PWD" --env-arg "stage=$stage" --env-arg "signingKey=$key" ${extra[@]+"${extra[@]}"})
-if [ $# -gt 0 ]; then exec bento env run "${files[@]}" "${args[@]}" -- "$@"; fi
-exec bento env run "${files[@]}" "${args[@]}"
+args=(--env-arg "agent=$agent" --env-arg "stage=$stage")
+# A workload kit can't be listed for every agent (two workloads clash), so it's passed only for
+# its own agent.
+if [ "$agent" = antigravity ]; then args+=(--env-arg agentKit=docker.io/sbx/antigravity:latest); fi
+args+=(${extra[@]+"${extra[@]}"})
+if [ $# -gt 0 ]; then exec bento env run "${args[@]}" -- "$@"; fi
+exec bento env run "${args[@]}"

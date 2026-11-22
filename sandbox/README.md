@@ -4,7 +4,8 @@ Run a coding agent (Claude, OpenCode, Codex, Antigravity, …) in a microVM with
 [smolbento](https://github.com/pelotech/smolbento) (`bento`). The agent works on its own clone of
 the repo, with filtered network access and no real credentials. Only its commits come back.
 
-This folder stands alone: the `sandbox` script, its kits and its notes. Nix is optional.
+This folder holds the `sandbox` script and its notes. The environment it runs (`~/.sbxenv.yaml`)
+and the agent-config kit live in [dotfiles](https://github.com/josmo/dotfiles). Nix is optional.
 
 ## Usage
 
@@ -12,13 +13,13 @@ This folder stands alone: the `sandbox` script, its kits and its notes. Nix is o
 cd <git repo>
 sandbox                 # Claude (default)
 sandbox opencode        # or: codex, copilot, cursor, shell, … (smolbento's built-in agents)
-sandbox antigravity     # an agent from a workload kit (agents/antigravity.yaml)
+sandbox antigravity     # an agent from a workload kit (passed as the agentKit arg)
 sandbox claude -- -c    # arguments after the agent go to it (the -- is optional)
 sandbox --env-arg region=eu opencode   # args for the env files come first
 ```
 
-`sandbox` stages [your instructions](#your-instructions), then runs `bento env run` with
-[env files](#env-files). Everything else is plain `bento`:
+`sandbox` stages [your instructions](#your-instructions), then runs `bento env run`, which reads
+the [env files](#env-files) itself. Everything else is plain `bento`:
 
 ```sh
 bento ls                       # sandboxes
@@ -37,7 +38,8 @@ Each repo + agent gets one sandbox, created on first use and reused after. The c
 from your last commit; uncommitted changes aren't copied in.
 
 The first run asks `Approve this plan?` (it needs a terminal), and so does a run after any env
-file or its inputs change, such as a new signing key. Changes to kits, workspaces or ports only
+file or its inputs change. A sandbox made before `sandbox` used `~/.sbxenv.yaml` asks once, since
+its plan changes; `bento rm <name>` starts fresh instead. Changes to kits, workspaces or ports only
 reach new sandboxes: `bento rm <name>`, then `sandbox` again.
 
 Sandboxes made by `sandbox` before it used env files aren't found by `bento env run` ("not found
@@ -45,26 +47,30 @@ for this environment"): merge their commits, `bento rm` them, and run `sandbox` 
 
 ## Env files
 
-`sandbox` passes these [sbxenv.yaml](https://github.com/pelotech/smolbento/blob/main/docs/usage.md#environments-sbxenvyaml)
-files to `bento env run`, the ones that exist, in this order (later wins: maps merge, lists add up):
+With no paths, `bento env run` reads two
+[sbxenv.yaml](https://github.com/pelotech/smolbento/blob/main/docs/environments.md) files (later
+wins: maps merge, lists add up):
 
-1. [`sbxenv.yaml`](sbxenv.yaml): the clone, your staged instructions (read-only), the kits and
-   a few variables.
-2. `agents/<agent>.yaml`: for agents that come from a kit, such as
-   [Antigravity](agents/antigravity.yaml).
-3. `~/.config/sandbox/agents/<agent>.yaml`: your own kit-based agents.
-4. `~/.config/sandbox/sbxenv.yaml`: your own additions for every sandbox (kits, `env`, memory).
-5. `./sbxenv.yaml`: the project's, from the directory you run `sandbox` in. Run it from the
+1. `~/.sbxenv.yaml`, from dotfiles: the clone of the current directory, your staged
+   instructions (read-only), the kits and a few variables. Put your own additions (kits, `env`,
+   memory) here.
+2. `./sbxenv.yaml`: the project's, from the directory you run `sandbox` in. Run it from the
    repo's root: from a subdirectory, that subdirectory is the workspace and the place it looks.
 
-(`~/.config` is `$XDG_CONFIG_HOME` if set.) Preview what a run would do with `bento env plan`
-and the same files.
+`sandbox` no longer reads `~/.config/sandbox/sbxenv.yaml` or `~/.config/sandbox/agents/*.yaml`:
+move their contents into `~/.sbxenv.yaml`. For an agent from a workload kit, pass the kit:
+`sandbox --env-arg agentKit=<kit> <agent>`, where `<agent>` is the last part of the kit's name.
 
-`sandbox` passes the args `agent`, `workspace` (the current directory), `stage` and
-`signingKey`; your files can use them as `${{ env.args.NAME }}`. Pass others, such as a project
-file's required ones, with `--env-arg NAME=VALUE` before the agent. `${{ env.projectDir }}` and
-`SBX_ENV_DIR` name the first file's directory, which here is this folder, not your repo: use
-`${{ env.args.workspace }}` for the repo.
+Preview what a run would do with `bento env plan --env-arg stage=…`.
+
+`sandbox` passes the args `agent`, `stage` and, for `antigravity`, `agentKit` (the workload kit:
+listed for every agent it would clash with the built-in ones). Your files can use them as
+`${{ env.args.NAME }}`. Pass others, such as a project file's required ones, with
+`--env-arg NAME=VALUE` before the agent. `${{ env.projectDir }}` is the directory you run in.
+
+Without the script it's the same command:
+`bento env run --env-arg agent=opencode --env-arg stage="$HOME/.local/share/sandbox/agent-config"`
+(the stage folder is whatever `sandbox` last staged).
 
 A project's `sbxenv.yaml` works on its own too: teammates without `sandbox` can use it with
 plain `bento env run` (or Docker's `sbx env run`). Being last, its `agent:` and `name:` win over
@@ -86,7 +92,7 @@ Pick how much you take. Each option builds on the one before it:
 | [2. Plus nix-darwin-config](#2-plus-nix-darwin-config) | The above, installed with the rest of your Mac's setup | Nix and Homebrew; a fork of this repo |
 | [3. Plus dotfiles](#3-plus-dotfiles) | The above, plus shared instructions and smolbento settings that follow you between Macs | A dotfiles repo (a fork of [mine](https://github.com/josmo/dotfiles) or your own) |
 
-All three need smolbento 0.29 or newer (its command is `bento`). Then do the
+All three need smolbento 0.35 or newer (its command is `bento`). Then do the
 [one-time setup](#once-whichever-you-pick).
 
 ### 1. Just the sandbox
@@ -101,8 +107,12 @@ ln -s "$PWD/nix-darwin-config/sandbox/sandbox" ~/.local/bin/sandbox   # or any d
 ```
 
 If `~/.local/bin` isn't on your `PATH` yet, add `export PATH="$HOME/.local/bin:$PATH"` to
-`~/.zshrc`. `sandbox` finds its kits next to itself (through the link), so `git pull` updates
-everything. The rest of the repo is unused.
+`~/.zshrc`. `sandbox` finds `sandbox.md` next to itself (through the link).
+
+Until the agent-config kit is published, this option also needs two files from the
+[dotfiles](https://github.com/josmo/dotfiles): `.sbxenv.yaml` into `~/`, and
+`.config/sandbox/kits/agent-config/` into `~/.config/sandbox/kits/` (copy the kit, don't link
+it: kit builds can't follow symlinks).
 
 ### 2. Plus nix-darwin-config
 
@@ -110,9 +120,9 @@ Fork the repo and follow [Fork it](../README.md#fork-it) in the main README. Kee
 in the flake's `modules`: it installs the `sandbox` command, Homebrew's smolbento and Docker's
 `sbx`. Set `dotfiles = null;` in `user.nix` if you're not taking option 3.
 
-The command runs from the Nix store copy of this folder, so edits here (to the script, kits or
-env files) take effect after `nh darwin switch`, not on save. Your own files under
-`~/.config/sandbox/` aren't affected: they're read on each run.
+The command runs from the Nix store copy of this folder, so edits to the script take effect
+after `nh darwin switch`, not on save. `~/.sbxenv.yaml` and your instructions are read on each
+run.
 
 ### 3. Plus dotfiles
 
@@ -122,6 +132,8 @@ matter are:
 
 | In the dotfiles repo | What it does | Instead of |
 |----------------------|--------------|------------|
+| `.sbxenv.yaml` | The [environment](#env-files) every sandbox runs | Copying it from option 1 |
+| `.config/sandbox/kits/agent-config/` | The [agent-config kit](#agent-config). Copied, not linked (`.dotfiles-copy`): kit builds can't follow symlinks. Edits reach `~/` on the next switch | Copying it from option 1 |
 | `.config/sandbox/instructions/*.md` | [Your instructions](#your-instructions) for every agent. Mine: `10-core.md`, a link to the `core.md` my agents on the Mac read too, and `20-host.md`, the host tools that aren't in the VM | Making the folder by hand |
 | `.config/smolbento/secrets.toml` | The Claude token as a 1Password reference (`op://Private/claude-sandbox/credential`), not the token. Put your own `claude setup-token` token in 1Password and point the reference at it | `bento secret set claude` (setup step 2) |
 | `.config/smolbento/config.toml` | smolbento settings; mine points the SSH agent at 1Password's socket. Change the user name in the path, or drop the file if you use the default SSH agent | — |
@@ -142,11 +154,9 @@ The rest stays by hand, because it shouldn't be in git or isn't a file:
 2. `claude setup-token`, then `bento secret set claude` and paste the token (or use `--ref` for
    a 1Password reference). The VM only ever sees a placeholder. With option 3's
    `secrets.toml`, skip this.
-3. To sign sandbox commits: `gpg.format ssh` and `user.signingkey` set to your SSH public key
-   (the key itself, or a path to the `.pub` file), with that key in your SSH agent. smolbento
-   forwards the agent while the sandbox runs. Without that setting, commits are signed with the
-   agent's first key; with no agent at all, the agent can't commit (see
-   [git-signing](#git-signing)).
+3. To sign sandbox commits: put your signing key first in your SSH agent. smolbento forwards
+   the agent while the sandbox runs, and commits are signed with its first key; with no agent at
+   all, the agent can't commit (see [git-signing](#git-signing)).
 
 ## Your instructions
 
@@ -175,21 +185,20 @@ your Mac's localhost (smolvm can't open just one yet), and kits can't grant it.
 ## The kits
 
 Kit changes apply to **new** sandboxes: `bento rm <name>`, then `sandbox` again. Check an edit
-with `bento kit validate ./<kit>`.
+with `bento kit validate <kit folder>`.
 
 ### git-signing
 
 smolbento's built-in [`git-signing` kit](https://github.com/pelotech/smolbento/tree/main/kits/git-signing)
-(0.29+), listed in `sbxenv.yaml`. It gives the sandbox your git identity (`user.name` and
+(0.29+), listed in `~/.sbxenv.yaml`. It gives the sandbox your git identity (`user.name` and
 `user.email` from the repo you run `sandbox` in) and signs commits in repos with a remote, which
 includes the agent's clone, with a key from your SSH agent. The private key never enters the
 sandbox; commits come back with their signatures, and `git log --show-signature` verifies them
 inside. Tags and scratch `git init` repos stay unsigned.
 
-`sandbox` passes your `user.signingkey` as the kit's `signingKey`, so the kit signs with that key
-even when the agent holds several, when `gpg.format` is `ssh` and `user.signingkey` is an SSH
-public key or a file holding one. Otherwise it warns and passes nothing, and the kit signs with
-the first key your agent lists. With no SSH agent at all, the agent's commits are refused, with a
+The kit signs with the first key your SSH agent lists, so keep your signing key first (in
+1Password, the order its agent offers keys). To pin one key, set the kit's `signingKey` arg in
+`~/.sbxenv.yaml`. With no SSH agent at all, the agent's commits are refused, with a
 `git-signing:` message saying what to fix.
 
 The kit asks for your agent (`ssh-agent@1`) for git signatures only, since agents from workload
@@ -200,11 +209,11 @@ narrow: they can also log in over SSH as you (`git push` to an SSH remote).
 ### Nix
 
 smolbento's [`nix` kit](https://github.com/pelotech/smolbento/tree/main/kits/nix), pinned in
-`sbxenv.yaml`: Nix with flakes, direnv with nix-direnv, and xz, in the kit's image layer, so
+`~/.sbxenv.yaml`: Nix with flakes, direnv with nix-direnv, and xz, in the kit's image layer, so
 nothing is downloaded at create. It brings its own network rules for the Nix caches. Agents run
 project commands with `direnv exec . <cmd>` or `nix develop -c <cmd>`, which the kit tells them.
 
-`sbxenv.yaml` also sets `OLLAMA_HOST=http://host.docker.internal:11434` and
+`~/.sbxenv.yaml` also sets `OLLAMA_HOST=http://host.docker.internal:11434` and
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Docker inside the sandbox comes from smolbento's
 built-in `docker` kit.
 
@@ -218,9 +227,10 @@ On each launch `sandbox` rebuilds `~/.local/share/sandbox/agent-config/`:
   format from APM).
 
 `sandbox` mounts that folder read-only, at the same path, as a second workspace
-(`additionalWorkspaces` with `readOnly: true` in `sbxenv.yaml`). smolvm enforces it on the host
-side, so not even root in the VM can write to it. `agent-config/agent-config.yaml` gets the path
-as a kit argument and, on every start:
+(`additionalWorkspaces` with `readOnly: true` in `~/.sbxenv.yaml`). smolvm enforces it on the
+host side, so not even root in the VM can write to it. The kit,
+`~/.config/sandbox/kits/agent-config/agent-config.yaml` from dotfiles, gets the path as a kit
+argument and, on every start:
 
 - Adds `AGENTS.md` to the end of each agent's instructions file, between
   `<!-- sandbox:instructions -->` markers, replacing the copy from the last start:
@@ -246,6 +256,7 @@ Hooks and MCP servers aren't available in sandboxes.
 
 ```sh
 bash tests/run.sh   # the script against a stub bento: no VM, network or Nix
+                    # needs $DOTFILES: it also checks the env file and kit there
 ```
 
 ## How it stays safe

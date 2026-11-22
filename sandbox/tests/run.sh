@@ -7,6 +7,8 @@ set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd -P)
 root=$(dirname "$here")  # the sandbox/ folder, physical path (realpath gives the same)
 script=$root/sandbox
+# The env file and agent-config kit live in dotfiles; read before setup changes HOME.
+dot=${DOTFILES:?set DOTFILES to your dotfiles checkout}
 ORIG_PATH=$PATH
 
 # A fresh HOME, XDG dirs, git config and git repo (the cwd), with the stub bento first on PATH.
@@ -14,7 +16,6 @@ setup() {
   t=$(cd "$(mktemp -d)" && pwd -P)
   export HOME=$t/home XDG_CONFIG_HOME=$t/config XDG_DATA_HOME=$t/data
   export GIT_CONFIG_GLOBAL=$t/gitconfig GIT_CONFIG_NOSYSTEM=1 STUB_LOG=$t/bento.log
-  unset SANDBOX_KITS
   mkdir -p "$HOME" "$t/bin" "$t/repo"
   : > "$GIT_CONFIG_GLOBAL"
   cat > "$t/bin/bento" <<'EOF'
@@ -26,6 +27,7 @@ esac
 EOF
   chmod +x "$t/bin/bento"
   export PATH=$t/bin:$ORIG_PATH
+  touch "$HOME/.sbxenv.yaml"
   git -C "$t/repo" init -q
   stage=$XDG_DATA_HOME/sandbox/agent-config
 }
@@ -38,30 +40,23 @@ assert_eq() { [ "$1" = "$2" ] || fail "expected: $(printf %q "$2")" "got: $(prin
 assert_line() { grep -qxF -- "$2" "$1" || fail "no line '$2' in $1: $(cat "$1" 2>&1)"; }
 assert_contains() { grep -qF -- "$2" "$1" || fail "no '$2' in $1: $(cat "$1" 2>&1)"; }
 assert_not_contains() { ! grep -qE -- "$2" "$1" || fail "unexpected '$2' in $1"; }
-# files: the env files passed to `bento env run` (log lines from 3 up to the first --env-arg).
-files() { awk 'NR > 2 && /^--env-arg$/ { exit } NR > 2' "$STUB_LOG"; }
 
-# --- Kits and env files beside the script; runs without Nix ---
-
-test_ignores_sandbox_kits_env() {
-  SANDBOX_KITS=/x run_sandbox claude || fail "exit $?: $(cat "$t/err")"
-  assert_eq "$(files | head -1)" "$root/sbxenv.yaml"
-}
+# --- bento's default env files; runs without Nix ---
 
 test_via_symlink() {
   ln -s "$script" "$t/bin/sandbox"
   SANDBOX_CMD=$t/bin/sandbox run_sandbox claude || fail "exit $?: $(cat "$t/err")"
-  assert_eq "$(files | head -1)" "$root/sbxenv.yaml"
+  assert_contains "$stage/AGENTS.md" "$(head -1 "$root/sandbox.md")"
 }
 
-test_env_run_shared_file() {
+test_env_run_defaults() {
   run_sandbox claude || fail "exit $?: $(cat "$t/err")"
   assert_eq "$(head -2 "$STUB_LOG")" "$(printf 'env\nrun')"
-  assert_eq "$(files)" "$root/sbxenv.yaml"
+  # No env file paths: the args start right after `env run`.
+  assert_eq "$(sed -n 3p "$STUB_LOG")" --env-arg
   assert_line "$STUB_LOG" agent=claude
-  assert_line "$STUB_LOG" "workspace=$t/repo"
   assert_line "$STUB_LOG" "stage=$stage"
-  assert_not_contains "$STUB_LOG" '^--$'
+  assert_not_contains "$STUB_LOG" '^(workspace|signingKey|agentKit)=|^--$'
 }
 
 test_default_agent() {
@@ -69,22 +64,22 @@ test_default_agent() {
   assert_line "$STUB_LOG" agent=claude
 }
 
-test_layer_order() {
-  mkdir -p "$XDG_CONFIG_HOME/sandbox/agents"
-  touch "$XDG_CONFIG_HOME/sandbox/agents/antigravity.yaml" "$XDG_CONFIG_HOME/sandbox/sbxenv.yaml" \
-    "$t/repo/sbxenv.yaml"
+test_antigravity_agent_kit() {
   run_sandbox antigravity || fail "exit $?: $(cat "$t/err")"
-  assert_eq "$(files)" "$(printf '%s\n' "$root/sbxenv.yaml" "$root/agents/antigravity.yaml" \
-    "$XDG_CONFIG_HOME/sandbox/agents/antigravity.yaml" "$XDG_CONFIG_HOME/sandbox/sbxenv.yaml" \
-    "$t/repo/sbxenv.yaml")"
   assert_line "$STUB_LOG" agent=antigravity
+  assert_line "$STUB_LOG" agentKit=docker.io/sbx/antigravity:latest
 }
 
-test_personal_agent_file() {
-  mkdir -p "$XDG_CONFIG_HOME/sandbox/agents"
-  touch "$XDG_CONFIG_HOME/sandbox/agents/foo.yaml"
-  run_sandbox foo || fail "exit $?: $(cat "$t/err")"
-  assert_eq "$(files)" "$(printf '%s\n' "$root/sbxenv.yaml" "$XDG_CONFIG_HOME/sandbox/agents/foo.yaml")"
+test_missing_home_env() {
+  rm "$HOME/.sbxenv.yaml"
+  if run_sandbox claude; then fail "ran without ~/.sbxenv.yaml"; fi
+  # shellcheck disable=SC2088 # the literal ~ the message shows
+  assert_contains "$t/err" "~/.sbxenv.yaml"
+  [ ! -e "$STUB_LOG" ] || fail "bento ran"
+  # A project file alone isn't: it'd run without your kits, signing or staged config.
+  touch "$t/repo/sbxenv.yaml"
+  if run_sandbox claude; then fail "ran with only ./sbxenv.yaml"; fi
+  [ ! -e "$STUB_LOG" ] || fail "bento ran"
 }
 
 test_agent_args() {
@@ -117,7 +112,7 @@ test_extra_env_args() {
   assert_line "$STUB_LOG" agent=opencode
   assert_line "$STUB_LOG" region=eu
   assert_line "$STUB_LOG" 'x=a b'
-  assert_eq "$(grep -c -x -- --env-arg "$STUB_LOG")" 6
+  assert_eq "$(grep -c -x -- --env-arg "$STUB_LOG")" 4
   assert_eq "$(tail -2 "$STUB_LOG")" "$(printf -- '--\n-c')"
 }
 
@@ -134,34 +129,33 @@ test_env_arg_needs_value() {
 }
 
 test_paths_with_spaces() {
-  export XDG_CONFIG_HOME="$t/my config"
-  mkdir -p "$XDG_CONFIG_HOME/sandbox" "$t/my repo"
+  export XDG_DATA_HOME="$t/my data"
+  mkdir -p "$t/my repo"
   git -C "$t/my repo" init -q
-  touch "$XDG_CONFIG_HOME/sandbox/sbxenv.yaml" "$t/my repo/sbxenv.yaml"
   (cd "$t/my repo" && "$script" claude) > "$t/out" 2> "$t/err" || fail "exit $?: $(cat "$t/err")"
-  assert_eq "$(files)" "$(printf '%s\n' "$root/sbxenv.yaml" "$XDG_CONFIG_HOME/sandbox/sbxenv.yaml" \
-    "$t/my repo/sbxenv.yaml")"
-  assert_line "$STUB_LOG" "workspace=$t/my repo"
+  assert_line "$STUB_LOG" "stage=$t/my data/sandbox/agent-config"
 }
 
 test_shared_file_declares_kits() {
-  [ -f "$root/sbxenv.yaml" ] || fail "no $root/sbxenv.yaml"
+  [ -f "$dot/.sbxenv.yaml" ] || fail "no $dot/.sbxenv.yaml"
   f=$t/sbxenv.yaml  # without comments
-  grep -v '^[[:space:]]*#' "$root/sbxenv.yaml" > "$f"
+  grep -v '^[[:space:]]*#' "$dot/.sbxenv.yaml" > "$f"
   # shellcheck disable=SC2016 # a literal ${{ }} reference, as in the file
-  for s in 'agent: ${{ env.args.agent }}' 'clone: true' 'readOnly: true' \
-    'ghcr.io/pelotech/smolbento/kits/nix:0.2.0' 'source: git-signing' 'source: agent-config' \
+  for s in 'agent: ${{ env.args.agent }}' 'path: ${{ env.projectDir }}' 'clone: true' \
+    'readOnly: true' 'agentKit:' '- ${{ env.args.agentKit }}' \
+    'ghcr.io/pelotech/smolbento/kits/nix:0.2.0' 'source: git-signing' \
+    'source: .config/sandbox/kits/agent-config' \
     'OLLAMA_HOST:' 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'; do
     assert_contains "$f" "$s"
   done
-  assert_not_contains "$f" 'lifecycle|command:'
-  [ ! -e "$root/nix-tools" ] || fail "nix-tools still present"
+  assert_not_contains "$f" 'lifecycle|command:|signingKey'
+  # Kit builds can't follow symlinks, so link-dotfiles.sh copies the kit.
+  assert_line "$dot/.dotfiles-copy" '.config/sandbox/kits/*'
+  for p in sbxenv.yaml agent-config agents nix-tools; do
+    [ ! -e "$root/$p" ] || fail "$root/$p still present (moved to dotfiles or retired)"
+  done
   # git-signing is smolbento's built-in kit (0.29+); a local folder would shadow it.
   [ ! -e "$root/git-signing" ] || fail "local git-signing kit still present"
-}
-
-test_agent_file_antigravity() {
-  assert_contains "$root/agents/antigravity.yaml" 'docker.io/sbx/antigravity:latest'
 }
 
 test_runs_without_nix() {
@@ -223,66 +217,12 @@ test_shipped_notes_generic() {
   assert_not_contains "$root/sandbox.md" 'aws-sso|IntelliJ'
 }
 
-# --- Task 3: signing key only when it's an SSH key ---
-
-# key_case FORMAT KEY: set gpg.format (empty: unset) and user.signingkey, run, leave the log.
-key_case() {
-  [ -z "$1" ] || git config --global gpg.format "$1"
-  [ -z "$2" ] || git config --global user.signingkey "$2"
-  run_sandbox claude || fail "exit $?: $(cat "$t/err")"
-}
-
-test_key_none() {
-  key_case "" ""
-  assert_line "$STUB_LOG" signingKey=
-  assert_eq "$(cat "$t/err")" ""
-}
-
-test_key_literal() {
-  key_case ssh "ssh-ed25519 AAAAC3x me"
-  assert_line "$STUB_LOG" "signingKey=ssh-ed25519 AAAAC3x"
-}
-
-test_key_prefixed() {
-  key_case ssh "key::ssh-rsa AAAAB3x"
-  assert_line "$STUB_LOG" "signingKey=ssh-rsa AAAAB3x"
-}
-
-test_key_file_tilde() {
-  mkdir -p "$HOME/.ssh"
-  echo "ssh-ed25519 AAAAF me" > "$HOME/.ssh/id.pub"
-  # shellcheck disable=SC2088 # a literal ~, as git config stores it
-  key_case ssh "~/.ssh/id.pub"
-  assert_line "$STUB_LOG" "signingKey=ssh-ed25519 AAAAF"
-}
-
-test_key_file_comment_underscore() {
-  mkdir -p "$HOME/.ssh"
-  echo "ssh-ed25519 AAAAF me_x@host" > "$HOME/.ssh/id.pub"
-  key_case ssh "$HOME/.ssh/id.pub"
-  assert_line "$STUB_LOG" "signingKey=ssh-ed25519 AAAAF"
-  assert_eq "$(cat "$t/err")" ""
-}
-
-test_key_gpg() {
-  key_case "" ABCDEF1234
-  assert_line "$STUB_LOG" signingKey=
-  assert_contains "$t/err" "signed with the first key in your SSH agent"
-}
-
-test_key_missing_file() {
-  # shellcheck disable=SC2088 # a literal ~, as git config stores it
-  key_case ssh "~/.ssh/nope.pub"
-  assert_line "$STUB_LOG" signingKey=
-  assert_contains "$t/err" "signed with the first key in your SSH agent"
-}
-
 # --- The agent-config kit's startup step, run on the host with a fake HOME ---
 
 # run_kit: run the kit's startup command with HOME=$t/home and AGENT_CONFIG=$stage.
 run_kit() {
   awk '/- command: \|/ { on = 1; next } on && NF && !/^            / { exit } on { sub(/^ {12}/, ""); print }' \
-    "$root/agent-config/agent-config.yaml" > "$t/kit.sh"
+    "$dot/.config/sandbox/kits/agent-config/agent-config.yaml" > "$t/kit.sh"
   [ -s "$t/kit.sh" ] || fail "no startup command in agent-config.yaml"
   AGENT_CONFIG=${1-$stage} sh "$t/kit.sh" || fail "kit step exit $?"
 }
@@ -345,7 +285,7 @@ test_kit_no_home_agents_file() {
 
 test_kit_without_config() {
   run_kit ""
-  [ -z "$(ls -A "$HOME")" ] || fail "wrote $(ls -A "$HOME")"
+  [ -z "$(find "$HOME" -mindepth 1 ! -name .sbxenv.yaml)" ] || fail "wrote $(ls -A "$HOME")"
 }
 
 # --- runner ---

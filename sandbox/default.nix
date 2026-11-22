@@ -2,8 +2,8 @@
 # Usage: `sandbox [agent] [-- agent args]`; see README.md.
 { pkgs, ... }:
 let
-  # A link to the script in this directory's store copy, so it finds its kits beside it, as it
-  # does from a clone. Kit directories keep their names, which smolbento uses as the kit names.
+  # A link to the script in this directory's store copy, so it finds sandbox.md beside it, as it
+  # does from a clone.
   sandbox = pkgs.runCommand "sandbox" { } ''
     mkdir -p $out/bin
     ln -s ${./.}/sandbox $out/bin/sandbox
